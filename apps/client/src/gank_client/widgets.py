@@ -87,15 +87,13 @@ class SectionTitle(QLabel):
         self.setProperty("role", "sectionTitle")
 
 
-THREAT_COLORS = {
-    "fresh": theme.ACCENT_RED,
-    "recent": theme.ACCENT_AMBER,
-    "stale": theme.TEXT_DIM,
-}
-
-
 class GankFeedRow(QWidget):
-    """One row in the region feed: a left threat-color strip + kill summary."""
+    """One row in the region feed: a left threat-color strip + kill summary.
+
+    `tier` is one of gank_shared.tiers' labels (IMMINENT/RECENT/STAY WARY),
+    or None for anything older than that window -- shown dim/gray rather
+    than excluded, since the feed is a broader history view, not just live
+    alerts like the bot's."""
 
     def __init__(
         self,
@@ -107,11 +105,11 @@ class GankFeedRow(QWidget):
         ganker_tag: str,
         value_str: str,
         jumps: int | None,
-        threat: str = "recent",
+        tier: tuple[str, str] | None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        color = THREAT_COLORS.get(threat, theme.TEXT_DIM)
+        color = tier[1] if tier is not None else theme.TEXT_DIM
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 6, 0, 6)

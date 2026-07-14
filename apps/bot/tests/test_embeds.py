@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
-from gank_bot.embeds import build_embed, collect_ids, tier_for_age
+from gank_shared.tiers import tier_for_age
+
+from gank_bot.embeds import build_embed, collect_ids
 
 
 def _event(minutes_ago: float, total_value: float | None = 15_000_000.0) -> dict:

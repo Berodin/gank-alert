@@ -11,9 +11,10 @@ from discord import app_commands
 from discord.ext import tasks
 
 from gank_shared.esi import ESIClient
+from gank_shared.tiers import WARY_MINUTES, tier_for_age
 
 from gank_bot import storage
-from gank_bot.embeds import WARY_MINUTES, build_embed, collect_ids, tier_for_age
+from gank_bot.embeds import build_embed, collect_ids
 
 logger = logging.getLogger("gank_bot")
 

@@ -18,9 +18,11 @@ from PySide6.QtWidgets import (
 
 from gank_shared.esi import ESIClient
 from gank_shared.formatting import format_isk
+from gank_shared.tiers import tier_for_age
 
 from gank_client import theme
 from gank_client.controller import Controller
+from gank_client.sound import SoundPlayer
 from gank_client.widgets import GankFeedRow, HudPanel, SectionTitle, fix_transparency
 
 logger = logging.getLogger("gank_client.main_window")
@@ -35,6 +37,7 @@ class MainWindow(QMainWindow):
 
         self.esi = ESIClient(component="client")
         self.controller = Controller()
+        self.sound_player = SoundPlayer()
 
         central = QWidget()
         central.setStyleSheet(f"background-color: {theme.BG_VOID};")
@@ -58,6 +61,7 @@ class MainWindow(QMainWindow):
         self.controller.region_changed.connect(self._on_region_changed)
         self.controller.feed_updated.connect(self._on_feed_updated)
         self.controller.location_updated.connect(self._on_location_updated)
+        self.controller.new_alert.connect(self.sound_player.play)
 
         self._latest_feed: list[dict] = []
         self._my_location: dict | None = None
@@ -249,7 +253,7 @@ class MainWindow(QMainWindow):
             occurred_at = datetime.fromisoformat(event["occurred_at"])
             local_time = occurred_at.astimezone()
             age_minutes = (datetime.now(occurred_at.tzinfo) - occurred_at).total_seconds() / 60
-            threat = "fresh" if age_minutes < 10 else "recent" if age_minutes < 60 else "stale"
+            tier = tier_for_age(age_minutes)
 
             row = GankFeedRow(
                 time_label=local_time.strftime("%H:%M"),
@@ -259,7 +263,7 @@ class MainWindow(QMainWindow):
                 ganker_tag=", ".join(m["entity_name"] for m in event["matched_entities"]) or "unknown",
                 value_str=format_isk(event.get("total_value")),
                 jumps=None,
-                threat=threat,
+                tier=tier,
             )
             self.feed_layout.insertWidget(self.feed_layout.count() - 1, row)
 

@@ -2,8 +2,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from gank_shared.tiers import tier_for_age
+
 from gank_bot import storage
-from gank_bot.embeds import tier_for_age
 
 
 def _insert_gank_event(conn, *, killmail_id: int, region_id: int, minutes_ago: float) -> None:

@@ -5,23 +5,7 @@ from datetime import UTC, datetime
 import discord
 
 from gank_shared.formatting import format_isk
-
-IMMINENT_MINUTES = 60
-RECENT_MINUTES = 120
-WARY_MINUTES = 240
-
-TIERS = [
-    (IMMINENT_MINUTES, "IMMINENT", discord.Color.red()),
-    (RECENT_MINUTES, "RECENT", discord.Color.orange()),
-    (WARY_MINUTES, "STAY WARY", discord.Color.gold()),
-]
-
-
-def tier_for_age(age_minutes: float) -> tuple[str, discord.Color] | None:
-    for max_minutes, label, color in TIERS:
-        if age_minutes < max_minutes:
-            return label, color
-    return None
+from gank_shared.tiers import tier_for_age
 
 
 def collect_ids(event: dict) -> set[int]:
@@ -44,7 +28,8 @@ def build_embed(event: dict, names: dict[int, str]) -> discord.Embed | None:
     tier = tier_for_age(age_minutes)
     if tier is None:
         return None
-    label, color = tier
+    label, hex_color = tier
+    color = discord.Color(int(hex_color.lstrip("#"), 16))
 
     victim = event["victim"]
     ship_name = names.get(victim["ship_type_id"], f"ship type {victim['ship_type_id']}")
