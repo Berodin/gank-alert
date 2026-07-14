@@ -18,6 +18,16 @@ BASE = "https://r2z2.zkillboard.com/ephemeral"
 MIN_INTERVAL_ON_404 = 6.0
 MIN_INTERVAL_BETWEEN_HITS = 0.1
 
+# Sequence files are only guaranteed to live >=24h before R2 purges them.
+# A 404 on a sequence we're resuming from (e.g. after downtime) is
+# indistinguishable from "not produced yet" -- if we've been retrying the
+# same sequence this long, assume it's gone rather than hang forever.
+STUCK_TIMEOUT_SECONDS = 10 * 60
+# ...but only jump forward if we're genuinely far behind (a real quiet
+# period can also produce a 10-minute stall). This many sequences behind
+# latest is roughly half an hour of kills at the long-run average rate.
+STUCK_GAP_THRESHOLD = 300
+
 
 class R2Z2Client:
     def __init__(self) -> None:
@@ -52,15 +62,44 @@ class R2Z2Client:
         """Yields killmail packages forever, starting at start_sequence.
 
         Blocks (sleeps) internally to respect R2Z2's rate limit contract.
+        If start_sequence turns out to already be expired/purged (e.g. the
+        ingester was down for a long time), a 404 on it looks identical to
+        "not produced yet" -- without a way to tell them apart, we detect
+        a long stall on a sequence far behind the live edge and jump
+        forward to it, accepting the gap as lost rather than hanging.
         """
         sequence = start_sequence
+        stuck_since: float | None = None
+
         while True:
             package = self.fetch(sequence)
             if package is None:
+                now = time.monotonic()
+                if stuck_since is None:
+                    stuck_since = now
+                elif now - stuck_since > STUCK_TIMEOUT_SECONDS:
+                    latest = self.latest_sequence()
+                    gap = latest - sequence
+                    if gap > STUCK_GAP_THRESHOLD:
+                        logger.warning(
+                            "sequence %d looks expired (stuck %.0fs, %d behind latest %d) "
+                            "-- jumping forward, accepting the gap as lost",
+                            sequence,
+                            now - stuck_since,
+                            gap,
+                            latest,
+                        )
+                        sequence = latest
+                        stuck_since = None
+                        continue
+                    # gap is small -- genuinely just a quiet period, keep waiting.
+                    stuck_since = now
+
                 logger.debug("sequence %d not ready, waiting %.0fs", sequence, MIN_INTERVAL_ON_404)
                 time.sleep(MIN_INTERVAL_ON_404)
                 continue
 
+            stuck_since = None
             yield package
             sequence += 1
             time.sleep(MIN_INTERVAL_BETWEEN_HITS)

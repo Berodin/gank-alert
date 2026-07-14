@@ -1,24 +1,36 @@
 # gank-alert
 
-Region-scoped EVE Online gank tracker: a Discord bot that posts alerts, and
-a desktop app people run to see live distance to the last known gank.
+EVE Online gank tracker: a Discord bot that posts alerts, and a desktop app
+people run to see live distance to the last known gank.
 
-Always scoped to exactly one region (configured via `GANK_REGION_ID`), never
-a system or the whole universe.
+Each consumer picks a **single region** (never a system, never multiple at
+once) -- but they pick independently: every Discord server running the bot
+sets its own region with `/setregion`, and the desktop app / api are scoped
+by `GANK_REGION_ID`. The ingester underneath watches the whole galaxy for
+the ganker list and tags every match with its region, so no consumer is
+limited to whatever region someone else picked.
 
 ## How it works
 
 - **Discovery**: [zKillboard R2Z2](https://github.com/zKillboard/zKillboard/wiki/API-(R2Z2))
   -- a sequence-numbered feed of every killmail in the game (RedisQ's
-  replacement, sunset 2026-05-31). No region filter server-side, so we filter
-  client-side using ESI's static system → constellation → region lookup
-  (cached forever, it never changes).
+  replacement, sunset 2026-05-31). Global firehose, no region filter
+  server-side. If the ingester is ever down long enough that its resume
+  cursor points at an already-purged sequence (R2Z2 only guarantees 24h
+  retention), a stuck-sequence detector jumps forward to the live edge
+  after ~10 minutes rather than hanging forever waiting for a file that's
+  gone.
 - **Classification**: attacker corp/alliance IDs are matched against a
   maintained ganker list (`packages/shared/ganker_list.seed.json`, seeded
-  with CODE. and Snuffed Out -- verify/extend this yourself). We match on
-  *attackers*, not the victim -- a ganker corp getting CONCORD'd shows up as
-  a separate killmail where that corp is the victim, which is evidence
-  CONCORD responded, not the gank itself.
+  with CODE., Snuffed Out, and Safety. -- verify/extend this yourself). We
+  match on *attackers*, not the victim -- a ganker corp getting CONCORD'd
+  shows up as a separate killmail where that corp is the victim, which is
+  evidence CONCORD responded, not the gank itself. Classification happens
+  before the ESI region lookup (cheap, in-memory match first), so the
+  ingester only pays for a region resolution on kills that actually matter.
+- **Alert staleness**: kills are tiered by age when posted -- 🔴 IMMINENT
+  (<1h), 🟠 RECENT (<2h), 🟡 STAY WARY (<4h). Anything older than 4h is
+  never posted, even during backlog catch-up after downtime.
 - **Storage**: SQLite (WAL mode), shared via a Docker volume between the
   ingester, bot, and api. Deliberately not Postgres -- single background
   writer, light read volume, one less service to run on a small box. Revisit
@@ -28,8 +40,8 @@ a system or the whole universe.
 
 ```
 apps/
-  ingester/   # R2Z2 poller -> region filter -> ganker classification -> SQLite
-  bot/        # Discord bot, polls SQLite for unposted gank_events, posts embeds
+  ingester/   # R2Z2 poller -> ganker classification -> region tagging -> SQLite
+  bot/        # Discord bot: /setregion per-guild, posts tiered gank embeds
   api/        # FastAPI: EVE SSO (PKCE) login, character location ingest, region feed
   client/     # Desktop app (Windows + Linux): PySide6, EVE HUD-styled UI
 packages/
@@ -71,16 +83,20 @@ token round-trips there.
 
 Needs your own credentials/setup before it does anything useful end-to-end:
 
-- **bot**: needs a Discord bot token + channel ID (`DISCORD_BOT_TOKEN`,
-  `DISCORD_CHANNEL_ID`) from https://discord.com/developers/applications.
+- **bot**: needs a Discord bot token (`DISCORD_BOT_TOKEN`) from
+  https://discord.com/developers/applications. When generating the invite
+  link, include the `applications.commands` OAuth2 scope or `/setregion`
+  won't show up. Each server picks its region (and which channel gets
+  alerts -- wherever `/setregion` was run) at runtime; requires the "Manage
+  Server" permission to run.
 - **api** / **client** login: needs an EVE developer app
   (https://developers.eveonline.com) of type **public client** (PKCE, no
   secret) with scope `esi-location.read_location.v1` and redirect URI
   matching `GANK_EVE_REDIRECT_URI` (must point at `api`'s
   `/auth/eve/callback`, not the client).
-- **ganker list**: only 2 seed entries (CODE., Snuffed Out), verified via
-  ESI but not curated -- expand `ganker_list.seed.json` with whatever groups
-  you actually want to track.
+- **ganker list**: only 3 seed entries (CODE., Snuffed Out, Safety.),
+  verified via ESI but not exhaustively curated -- expand
+  `ganker_list.seed.json` with whatever groups you actually want to track.
 
 ## Local dev
 
@@ -88,7 +104,7 @@ Needs your own credentials/setup before it does anything useful end-to-end:
 uv sync --all-packages
 uv run --package gank-ingester gank-ingester   # runs immediately, no auth needed
 uv run --package gank-api gank-api             # needs GANK_EVE_CLIENT_ID / GANK_EVE_REDIRECT_URI
-uv run --package gank-bot gank-bot             # needs DISCORD_BOT_TOKEN / DISCORD_CHANNEL_ID
+uv run --package gank-bot gank-bot             # needs DISCORD_BOT_TOKEN, then /setregion in a server
 uv run --package gank-client gank-client       # opens the desktop app window
 ```
 

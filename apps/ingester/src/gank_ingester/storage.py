@@ -18,8 +18,7 @@ CREATE TABLE IF NOT EXISTS gank_events (
     occurred_at TEXT NOT NULL,
     solar_system_id INTEGER NOT NULL,
     region_id INTEGER NOT NULL,
-    payload_json TEXT NOT NULL,
-    posted_discord INTEGER NOT NULL DEFAULT 0
+    payload_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_gank_events_region_time
     ON gank_events (region_id, occurred_at DESC);

@@ -91,3 +91,26 @@ class ESIClient:
     def get_character_location(self, character_id: int, access_token: str) -> dict:
         """Requires the esi-location.read_location.v1 scope on access_token."""
         return self._get(f"/characters/{character_id}/location/", access_token=access_token).json()
+
+    def resolve_region_by_name(self, name: str) -> int | None:
+        """Exact-name lookup (case-sensitive, per ESI) -- e.g. 'The Forge'."""
+        resp = self._client.post("/universe/ids/", json=[name])
+        resp.raise_for_status()
+        regions = resp.json().get("regions") or []
+        return regions[0]["id"] if regions else None
+
+    def resolve_names(self, ids: list[int]) -> dict[int, str]:
+        """Batch-resolve any mix of character/corporation/alliance/system/
+        constellation/type/... IDs to display names in one call. Public,
+        no auth. ESI caps this at 1000 IDs per request."""
+        ids = sorted(set(ids))
+        if not ids:
+            return {}
+
+        result: dict[int, str] = {}
+        for start in range(0, len(ids), 1000):
+            batch = ids[start : start + 1000]
+            resp = self._client.post("/universe/names/", json=batch)
+            resp.raise_for_status()
+            result.update({row["id"]: row["name"] for row in resp.json()})
+        return result

@@ -10,5 +10,11 @@
     "entity_id": 99004901,
     "entity_name": "Snuffed Out",
     "note": "Verified via ESI /alliances/99004901/. Mixed PvP/ganking, not exclusively a ganking group -- reconsider inclusion criteria."
+  },
+  {
+    "entity_type": "alliance",
+    "entity_id": 99010569,
+    "entity_name": "Safety.",
+    "note": "Verified via ESI /alliances/99010569/. Highsec ganking, closely associated with CODE./the New Order."
   }
 ]

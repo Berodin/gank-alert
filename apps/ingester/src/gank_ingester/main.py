@@ -13,15 +13,11 @@ from gank_ingester.r2z2 import R2Z2Client
 
 logger = logging.getLogger("gank_ingester")
 
-# The Forge (Jita's region) -- most active region, good default for testing.
-DEFAULT_REGION_ID = 10000002
-
 
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    region_id = int(os.environ.get("GANK_REGION_ID", DEFAULT_REGION_ID))
     db_path = Path(os.environ.get("GANK_DB_PATH", "gank_alert.sqlite3"))
     ganker_list_path = Path(
         os.environ.get(
@@ -32,8 +28,7 @@ def run() -> None:
 
     ganker_list = load_ganker_list(ganker_list_path)
     logger.info(
-        "watching region_id=%d with %d ganker-list entries: %s",
-        region_id,
+        "watching all regions with %d ganker-list entries: %s",
         len(ganker_list),
         ", ".join(e.entity_name for e in ganker_list),
     )
@@ -54,28 +49,33 @@ def run() -> None:
     try:
         for package in r2z2.iter_from(start):
             event = parse_package(package)
-            event.region_id = esi.region_id_for_system(event.solar_system_id)
 
-            if event.region_id == region_id:
-                attacker_entities = {
-                    (etype, eid)
-                    for a in event.attackers
-                    for etype, eid in [("corporation", a.corporation_id), ("alliance", a.alliance_id)]
-                    if eid is not None
-                }
-                matches = classify(attacker_entities, ganker_list)
-                if matches:
-                    event.is_gank = True
-                    event.matched_entities = matches
-                    storage.save_gank_event(conn, event)
-                    matched += 1
-                    logger.info(
-                        "GANK killmail_id=%d system=%d victim_ship=%s by %s",
-                        event.killmail_id,
-                        event.solar_system_id,
-                        event.victim.ship_type_id,
-                        ", ".join(m.entity_name for m in matches),
-                    )
+            # Classify first (cheap, in-memory) -- only pay for the ESI
+            # region lookup on kills that actually matter. Region isn't a
+            # discovery filter anymore: the ingester watches the whole
+            # galaxy for the ganker list, and each Discord guild picks
+            # which region's matches it wants alerts for.
+            attacker_entities = {
+                (etype, eid)
+                for a in event.attackers
+                for etype, eid in [("corporation", a.corporation_id), ("alliance", a.alliance_id)]
+                if eid is not None
+            }
+            matches = classify(attacker_entities, ganker_list)
+            if matches:
+                event.region_id = esi.region_id_for_system(event.solar_system_id)
+                event.is_gank = True
+                event.matched_entities = matches
+                storage.save_gank_event(conn, event)
+                matched += 1
+                logger.info(
+                    "GANK killmail_id=%d system=%d region=%d victim_ship=%s by %s",
+                    event.killmail_id,
+                    event.solar_system_id,
+                    event.region_id,
+                    event.victim.ship_type_id,
+                    ", ".join(m.entity_name for m in matches),
+                )
 
             processed += 1
             if processed % 50 == 0:
