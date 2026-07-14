@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from gank_shared.esi import ESIClient
+from gank_shared.formatting import format_isk
 
 from gank_client import theme
 from gank_client.controller import Controller
@@ -223,22 +224,40 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
 
-        for event in feed[:30]:
-            try:
-                system_name = self.esi.system_name(event["solar_system_id"])
-            except Exception:
-                logger.exception("failed to resolve system name")
-                system_name = str(event["solar_system_id"])
+        visible = feed[:30]
+        ids: set[int] = set()
+        for event in visible:
+            ids.add(event["solar_system_id"])
+            ids.add(event["victim"]["ship_type_id"])
+            for key in ("character_id", "corporation_id"):
+                if event["victim"].get(key):
+                    ids.add(event["victim"][key])
+        try:
+            names = self.esi.resolve_names(list(ids))
+        except Exception:
+            logger.exception("failed to resolve feed names")
+            names = {}
 
+        for event in visible:
+            victim = event["victim"]
+            system_name = names.get(event["solar_system_id"], str(event["solar_system_id"]))
+            ship_name = names.get(victim["ship_type_id"], f"ship type {victim['ship_type_id']}")
+            victim_name = names.get(victim.get("character_id"), "unknown pilot")
+
+            # occurred_at comes back as UTC from the api -- show it in
+            # whatever timezone this PC is set to, not raw UTC.
             occurred_at = datetime.fromisoformat(event["occurred_at"])
+            local_time = occurred_at.astimezone()
             age_minutes = (datetime.now(occurred_at.tzinfo) - occurred_at).total_seconds() / 60
             threat = "fresh" if age_minutes < 10 else "recent" if age_minutes < 60 else "stale"
 
             row = GankFeedRow(
-                time_label=occurred_at.strftime("%H:%M"),
+                time_label=local_time.strftime("%H:%M"),
                 system_name=system_name,
-                victim_ship=f"ship type {event['victim']['ship_type_id']}",
+                victim_name=victim_name,
+                victim_ship=ship_name,
                 ganker_tag=", ".join(m["entity_name"] for m in event["matched_entities"]) or "unknown",
+                value_str=format_isk(event.get("total_value")),
                 jumps=None,
                 threat=threat,
             )

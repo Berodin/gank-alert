@@ -102,8 +102,10 @@ class GankFeedRow(QWidget):
         *,
         time_label: str,
         system_name: str,
+        victim_name: str,
         victim_ship: str,
         ganker_tag: str,
+        value_str: str,
         jumps: int | None,
         threat: str = "recent",
         parent: QWidget | None = None,
@@ -134,10 +136,14 @@ class GankFeedRow(QWidget):
         top.addStretch()
         top.addWidget(time_lbl)
 
-        bottom = QLabel(f"{victim_ship} destroyed by {ganker_tag}")
-        bottom.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 12px;")
+        middle = QLabel(f"{victim_name} lost a {victim_ship} ({value_str})")
+        middle.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 12px;")
+
+        bottom = QLabel(f"Killed by {ganker_tag}")
+        bottom.setProperty("role", "dim")
 
         text_col.addLayout(top)
+        text_col.addWidget(middle)
         text_col.addWidget(bottom)
         root.addLayout(text_col, stretch=1)
 

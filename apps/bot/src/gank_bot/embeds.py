@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 import discord
 
+from gank_shared.formatting import format_isk
+
 IMMINENT_MINUTES = 60
 RECENT_MINUTES = 120
 WARY_MINUTES = 240
@@ -33,16 +35,6 @@ def collect_ids(event: dict) -> set[int]:
                 if attacker.get(key):
                     ids.add(attacker[key])
     return ids
-
-
-def _format_isk(value: float | None) -> str:
-    if not value:
-        return "unknown"
-    if value >= 1_000_000_000:
-        return f"{value / 1_000_000_000:.2f}B ISK"
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.1f}M ISK"
-    return f"{value:,.0f} ISK"
 
 
 def build_embed(event: dict, names: dict[int, str]) -> discord.Embed | None:
@@ -81,6 +73,6 @@ def build_embed(event: dict, names: dict[int, str]) -> discord.Embed | None:
     embed.add_field(name="Final blow", value=final_blow_str, inline=True)
     embed.add_field(name="Ganker group", value=ganker_tags, inline=True)
     embed.add_field(name="Involved", value=str(len(event["attackers"])), inline=True)
-    embed.add_field(name="Value", value=_format_isk(event.get("total_value")), inline=True)
+    embed.add_field(name="Value", value=format_isk(event.get("total_value")), inline=True)
     embed.set_footer(text=f"{system_name}")
     return embed
