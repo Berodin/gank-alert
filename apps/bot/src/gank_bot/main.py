@@ -13,7 +13,7 @@ from discord.ext import tasks
 from gank_shared.esi import ESIClient
 
 from gank_bot import storage
-from gank_bot.embeds import WARY_MINUTES, build_embed, collect_ids
+from gank_bot.embeds import WARY_MINUTES, build_embed, collect_ids, tier_for_age
 
 logger = logging.getLogger("gank_bot")
 
@@ -63,19 +63,40 @@ class GankBot(discord.Client):
             )
             return
 
-        rows = storage.unposted_events_for_guild(
+        rows = storage.events_in_window_for_guild(
             conn, guild_id=guild_row["guild_id"], region_id=guild_row["region_id"], since_iso=since_iso
         )
         if not rows:
             return
 
-        events = [json.loads(payload) for _, payload in rows]
+        already_posted = storage.posted_tiers_for_guild(conn, guild_id=guild_row["guild_id"])
+
+        # A kill is a repeating reminder, not a one-shot notice: it's
+        # posted again each time it crosses into a new staleness tier
+        # (IMMINENT -> RECENT -> STAY WARY), so people still in the area
+        # get nudged as the threat window closes, not just once at t=0.
+        due = []
+        for killmail_id, payload in rows:
+            event = json.loads(payload)
+            occurred_at = datetime.fromisoformat(event["occurred_at"])
+            age_minutes = (datetime.now(UTC) - occurred_at).total_seconds() / 60
+            tier = tier_for_age(age_minutes)
+            if tier is None:
+                continue
+            label, _ = tier
+            if (killmail_id, label) in already_posted:
+                continue
+            due.append((killmail_id, label, event))
+
+        if not due:
+            return
+
         all_ids: set[int] = set()
-        for event in events:
+        for _, _, event in due:
             all_ids |= collect_ids(event)
         names = self.esi.resolve_names(list(all_ids))
 
-        for event in events:
+        for killmail_id, label, event in due:
             embed = build_embed(event, names)
             if embed is not None:
                 try:
@@ -88,7 +109,7 @@ class GankBot(discord.Client):
                         guild_row["guild_id"],
                     )
                     return  # same failure for every remaining event this cycle, stop here
-            storage.mark_posted(conn, guild_id=guild_row["guild_id"], killmail_id=event["killmail_id"])
+            storage.mark_posted(conn, guild_id=guild_row["guild_id"], killmail_id=killmail_id, tier=label)
 
     @poll_gank_events.before_loop
     async def _before_poll(self) -> None:

@@ -29,9 +29,12 @@ someone else picked, and `api` itself is entirely region-agnostic.
   evidence CONCORD responded, not the gank itself. Classification happens
   before the ESI region lookup (cheap, in-memory match first), so the
   ingester only pays for a region resolution on kills that actually matter.
-- **Alert staleness**: kills are tiered by age when posted -- 🔴 IMMINENT
-  (<1h), 🟠 RECENT (<2h), 🟡 STAY WARY (<4h). Anything older than 4h is
-  never posted, even during backlog catch-up after downtime.
+- **Alerts are reminders, not one-shot notices**: a kill is posted again
+  each time it ages into a new tier -- 🔴 IMMINENT (<1h), 🟠 RECENT (<2h),
+  🟡 STAY WARY (<4h) -- so people still in the area get nudged as the
+  threat window closes, not just once at detection time. Each (guild,
+  kill, tier) combination fires exactly once; nothing is posted past 4h,
+  including during backlog catch-up after downtime.
 - **Storage**: SQLite (WAL mode), shared via a Docker volume between the
   ingester, bot, and api. Deliberately not Postgres -- single background
   writer, light read volume, one less service to run on a small box. Revisit

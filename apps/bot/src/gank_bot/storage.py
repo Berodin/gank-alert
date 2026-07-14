@@ -26,11 +26,16 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     updated_at TEXT NOT NULL
 );
 
+-- One row per (guild, killmail, tier) -- a kill is deliberately re-posted
+-- as a reminder each time it crosses into a new staleness tier (IMMINENT
+-- -> RECENT -> STAY WARY), not just once. The tier is part of the key so
+-- each of those reminders fires exactly once.
 CREATE TABLE IF NOT EXISTS discord_posts (
     guild_id INTEGER NOT NULL,
     killmail_id INTEGER NOT NULL,
+    tier TEXT NOT NULL,
     posted_at TEXT NOT NULL,
-    PRIMARY KEY (guild_id, killmail_id)
+    PRIMARY KEY (guild_id, killmail_id, tier)
 );
 """
 
@@ -60,21 +65,32 @@ def all_guild_settings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM guild_settings").fetchall()
 
 
-def unposted_events_for_guild(conn: sqlite3.Connection, *, guild_id: int, region_id: int, since_iso: str) -> list[tuple[int, str]]:
+def events_in_window_for_guild(conn: sqlite3.Connection, *, guild_id: int, region_id: int, since_iso: str) -> list[tuple[int, str]]:
+    """All events still within the alert window (<4h old), regardless of
+    whether they've already been posted -- tier-level dedup happens in the
+    caller, since which tiers are already posted varies per killmail."""
     return conn.execute(
         "SELECT killmail_id, payload_json FROM gank_events "
         "WHERE region_id = ? AND occurred_at >= ? "
-        "AND killmail_id NOT IN (SELECT killmail_id FROM discord_posts WHERE guild_id = ?) "
         "ORDER BY occurred_at ASC",
-        (region_id, since_iso, guild_id),
+        (region_id, since_iso),
     ).fetchall()
 
 
-def mark_posted(conn: sqlite3.Connection, *, guild_id: int, killmail_id: int) -> None:
+def posted_tiers_for_guild(conn: sqlite3.Connection, *, guild_id: int) -> set[tuple[int, str]]:
+    """(killmail_id, tier) pairs already posted for this guild, so the
+    caller can skip tiers already sent and only post newly-crossed ones."""
+    rows = conn.execute(
+        "SELECT killmail_id, tier FROM discord_posts WHERE guild_id = ?", (guild_id,)
+    ).fetchall()
+    return {(killmail_id, tier) for killmail_id, tier in rows}
+
+
+def mark_posted(conn: sqlite3.Connection, *, guild_id: int, killmail_id: int, tier: str) -> None:
     from datetime import UTC, datetime
 
     conn.execute(
-        "INSERT OR IGNORE INTO discord_posts (guild_id, killmail_id, posted_at) VALUES (?, ?, ?)",
-        (guild_id, killmail_id, datetime.now(UTC).isoformat()),
+        "INSERT OR IGNORE INTO discord_posts (guild_id, killmail_id, tier, posted_at) VALUES (?, ?, ?, ?)",
+        (guild_id, killmail_id, tier, datetime.now(UTC).isoformat()),
     )
     conn.commit()
