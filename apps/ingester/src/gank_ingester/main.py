@@ -8,7 +8,7 @@ from gank_shared.esi import ESIClient
 from gank_shared.ganker_list import classify, load_ganker_list
 
 from gank_ingester import storage
-from gank_ingester.parse import parse_package
+from gank_ingester.parse import attacker_entity_keys, parse_package
 from gank_ingester.r2z2 import R2Z2Client
 
 logger = logging.getLogger("gank_ingester")
@@ -55,13 +55,7 @@ def run() -> None:
             # discovery filter anymore: the ingester watches the whole
             # galaxy for the ganker list, and each Discord guild picks
             # which region's matches it wants alerts for.
-            attacker_entities = {
-                (etype, eid)
-                for a in event.attackers
-                for etype, eid in [("corporation", a.corporation_id), ("alliance", a.alliance_id)]
-                if eid is not None
-            }
-            matches = classify(attacker_entities, ganker_list)
+            matches = classify(attacker_entity_keys(event), ganker_list)
             if matches:
                 event.region_id = esi.region_id_for_system(event.solar_system_id)
                 event.is_gank = True

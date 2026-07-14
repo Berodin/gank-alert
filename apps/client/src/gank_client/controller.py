@@ -14,6 +14,7 @@ POLL_INTERVAL_MS = 15_000
 
 class Controller(QObject):
     login_changed = Signal()
+    region_changed = Signal()
     feed_updated = Signal(list)
     location_updated = Signal(object)  # dict | None
 
@@ -46,6 +47,11 @@ class Controller(QObject):
     def logout(self) -> None:
         self.api.logout()
         self.login_changed.emit()
+
+    def set_region(self, region_id: int, region_name: str) -> None:
+        self.api.set_region(region_id, region_name)
+        self.region_changed.emit()
+        self.refresh()
 
     def refresh(self) -> None:
         try:

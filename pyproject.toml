@@ -9,6 +9,23 @@ members = ["apps/*", "packages/*"]
 [tool.uv.sources]
 gank-shared = { workspace = true }
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/shared/tests",
+    "apps/ingester/tests",
+    "apps/bot/tests",
+    "apps/api/tests",
+]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

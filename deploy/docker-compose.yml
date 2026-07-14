@@ -1,4 +1,23 @@
 services:
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+
   ingester:
     build:
       context: ..
@@ -38,25 +57,16 @@ services:
     environment:
       GANK_EVE_CLIENT_ID: ${GANK_EVE_CLIENT_ID}
       GANK_EVE_REDIRECT_URI: ${GANK_EVE_REDIRECT_URI}
-      GANK_REGION_ID: ${GANK_REGION_ID}
       GANK_DB_PATH: /data/gank_alert.sqlite3
     volumes:
       - gank_data:/data
-    networks:
-      - default
-      - traefik
     labels:
       - traefik.enable=true
       - traefik.http.routers.gank-api.rule=Host(`${GANK_API_DOMAIN}`)
       - traefik.http.routers.gank-api.entrypoints=websecure
       - traefik.http.routers.gank-api.tls.certresolver=le
       - traefik.http.services.gank-api.loadbalancer.server.port=8000
-      - traefik.docker.network=lizard-intel_default
-
-networks:
-  traefik:
-    external: true
-    name: lizard-intel_default
 
 volumes:
   gank_data:
+  traefik_certs:

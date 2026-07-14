@@ -5,7 +5,14 @@ import logging
 
 import httpx
 
-from gank_client.config import API_BASE, CONFIG_DIR, TOKEN_FILE
+from gank_client.config import (
+    API_BASE,
+    CONFIG_DIR,
+    DEFAULT_REGION_ID,
+    DEFAULT_REGION_NAME,
+    SETTINGS_FILE,
+    TOKEN_FILE,
+)
 
 logger = logging.getLogger("gank_client.api")
 
@@ -17,6 +24,10 @@ class ApiClient:
         self.character_id: int | None = None
         self.character_name: str | None = None
         self._load_saved_token()
+
+        self.region_id: int = DEFAULT_REGION_ID
+        self.region_name: str = DEFAULT_REGION_NAME
+        self._load_saved_region()
 
     def _load_saved_token(self) -> None:
         if TOKEN_FILE.exists():
@@ -49,8 +60,23 @@ class ApiClient:
     def _auth_headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_token}"}
 
+    def _load_saved_region(self) -> None:
+        if SETTINGS_FILE.exists():
+            data = json.loads(SETTINGS_FILE.read_text())
+            self.region_id = data.get("region_id", DEFAULT_REGION_ID)
+            self.region_name = data.get("region_name", DEFAULT_REGION_NAME)
+
+    def set_region(self, region_id: int, region_name: str) -> None:
+        """Region is a purely local client preference -- api is region-
+        agnostic and just serves whatever region_id each request asks for,
+        so there's nothing to sync server-side here."""
+        self.region_id = region_id
+        self.region_name = region_name
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        SETTINGS_FILE.write_text(json.dumps({"region_id": region_id, "region_name": region_name}))
+
     def get_feed(self, limit: int = 50) -> list[dict]:
-        resp = self._client.get("/feed", params={"limit": limit})
+        resp = self._client.get("/feed", params={"region_id": self.region_id, "limit": limit})
         resp.raise_for_status()
         return resp.json()
 

@@ -8,8 +8,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --all-packages --group dev
+      - run: uv run --group dev pytest -v
+
   build-images:
     if: github.event_name != 'pull_request'
+    needs: [test]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -36,6 +45,7 @@ jobs:
             ghcr.io/${{ github.repository }}-${{ matrix.app }}:${{ github.sha }}
 
   build-client:
+    needs: [test]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

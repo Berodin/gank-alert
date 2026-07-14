@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from gank_shared.models import GankEvent, Participant
+from gank_shared.models import EntityType, GankEvent, Participant
+
+
+def attacker_entity_keys(event: GankEvent) -> set[tuple[EntityType, int]]:
+    """Corp/alliance IDs of the *attackers* only -- deliberately excludes
+    the victim, since a ganker corp getting CONCORD'd shows up as a
+    separate killmail where that corp is the victim, which is evidence
+    CONCORD responded, not the gank itself."""
+    return {
+        (etype, eid)
+        for a in event.attackers
+        for etype, eid in [(EntityType.CORPORATION, a.corporation_id), (EntityType.ALLIANCE, a.alliance_id)]
+        if eid is not None
+    }
 
 
 def parse_package(package: dict) -> GankEvent:

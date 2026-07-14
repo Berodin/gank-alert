@@ -5,10 +5,11 @@ people run to see live distance to the last known gank.
 
 Each consumer picks a **single region** (never a system, never multiple at
 once) -- but they pick independently: every Discord server running the bot
-sets its own region with `/setregion`, and the desktop app / api are scoped
-by `GANK_REGION_ID`. The ingester underneath watches the whole galaxy for
-the ganker list and tags every match with its region, so no consumer is
-limited to whatever region someone else picked.
+sets its own region with `/setregion`, and each desktop app user sets theirs
+with the "Change region" button (stored locally, not on the server). The
+ingester underneath watches the whole galaxy for the ganker list and tags
+every match with its region, so no consumer is limited to whatever region
+someone else picked, and `api` itself is entirely region-agnostic.
 
 ## How it works
 
@@ -108,13 +109,32 @@ uv run --package gank-bot gank-bot             # needs DISCORD_BOT_TOKEN, then /
 uv run --package gank-client gank-client       # opens the desktop app window
 ```
 
+## Testing
+
+```
+uv sync --all-packages --group dev
+uv run --group dev pytest -v
+```
+
+64 tests, no live network calls (ESI/R2Z2 mocked with `respx`, Discord never
+constructed, sqlite via `tmp_path`). Covers the parts that are easy to get
+subtly wrong and hard to eyeball: ganker-list classification (attackers
+only, never the victim), the R2Z2 stuck-cursor jump using a fake clock so
+it doesn't take 10 real minutes, PKCE/JWT handling, BFS jump-distance,
+per-guild region filtering and posted-tracking, embed tiering/staleness,
+and the `/feed` + `/jump-distance` HTTP contracts. Runs in CI on every push
+and PR; image/client builds won't run if it fails. No coverage for the Qt
+GUI itself or an actual Discord connection -- those still need a manual
+check (see below).
+
 ## Deploy
 
-`deploy/docker-compose.yml` runs `ingester` + `bot` + `api` on one box (no
-public ports needed for ingester/bot -- outbound only). `api` joins the
-existing shared Traefik network (`lizard-intel_default`, same pattern as
-`conduwuit-docker` and `lizard-intel`) so it just needs a `GANK_API_DOMAIN`
-subdomain, no separate Traefik/Cloudflare setup.
+`deploy/docker-compose.yml` is fully self-contained -- it bundles its own
+Traefik (Let's Encrypt via HTTP challenge) and doesn't depend on any other
+project's infrastructure. `ingester` and `bot` need no public ports at all
+(outbound only); only `api` is exposed, on `GANK_API_DOMAIN`. Point that
+domain's DNS at the box and set `ACME_EMAIL` and you're done -- no manual
+Traefik/Cloudflare setup required.
 
 ```
 cp deploy/.env.example deploy/.env   # fill in values

@@ -6,8 +6,10 @@ from datetime import datetime
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -52,12 +54,14 @@ class MainWindow(QMainWindow):
         fix_transparency(central)
 
         self.controller.login_changed.connect(self._on_login_changed)
+        self.controller.region_changed.connect(self._on_region_changed)
         self.controller.feed_updated.connect(self._on_feed_updated)
         self.controller.location_updated.connect(self._on_location_updated)
 
         self._latest_feed: list[dict] = []
         self._my_location: dict | None = None
         self._on_login_changed()
+        self._on_region_changed()
         self.controller.start()
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
@@ -71,18 +75,22 @@ class MainWindow(QMainWindow):
 
         wordmark = QLabel("GANK ALERT")
         wordmark.setObjectName("wordmark")
-        sub = QLabel("REGION WATCH — THE FORGE")
-        sub.setObjectName("wordmarkSub")
+        self.region_sub_lbl = QLabel()
+        self.region_sub_lbl.setObjectName("wordmarkSub")
 
         title_col.addWidget(wordmark)
-        title_col.addWidget(sub)
+        title_col.addWidget(self.region_sub_lbl)
         row.addLayout(title_col)
         row.addStretch()
+
+        region_btn = QPushButton("CHANGE REGION")
+        region_btn.clicked.connect(self._on_change_region)
+        row.addWidget(region_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         status_dot = QLabel("● LIVE")
         status_dot.setStyleSheet(
             f"color: {theme.ACCENT_GREEN}; font-family: '{theme.FONT_MONO}'; "
-            f"font-size: 12px; letter-spacing: 2px;"
+            f"font-size: 12px; letter-spacing: 2px; margin-left: 12px;"
         )
         row.addWidget(status_dot, alignment=Qt.AlignmentFlag.AlignVCenter)
         return row
@@ -178,6 +186,34 @@ class MainWindow(QMainWindow):
             )
             self.login_btn.setText("LOG IN WITH EVE")
             self.system_lbl.setText("—")
+
+    def _on_change_region(self) -> None:
+        name, ok = QInputDialog.getText(
+            self,
+            "Change region",
+            "Exact EVE region name (e.g. 'The Forge', 'Domain'):",
+            text=self.controller.api.region_name,
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        try:
+            region_id = self.esi.resolve_region_by_name(name)
+        except Exception:
+            logger.exception("failed to resolve region name")
+            region_id = None
+
+        if region_id is None:
+            QMessageBox.warning(
+                self, "Unknown region", f"Couldn't find a region named exactly '{name}'."
+            )
+            return
+
+        self.controller.set_region(region_id, name)
+
+    def _on_region_changed(self) -> None:
+        self.region_sub_lbl.setText(f"REGION WATCH — {self.controller.api.region_name.upper()}")
 
     def _on_feed_updated(self, feed: list[dict]) -> None:
         self._latest_feed = feed

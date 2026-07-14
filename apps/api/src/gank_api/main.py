@@ -69,13 +69,13 @@ def my_location(character: tuple[int, str] = Depends(current_character)) -> dict
 
 
 @app.get("/feed")
-def get_feed(limit: int = 50) -> list[dict]:
+def get_feed(region_id: int, limit: int = 50) -> list[dict]:
     conn = storage.connect(settings.db_path)
     try:
         rows = conn.execute(
             "SELECT payload_json FROM gank_events WHERE region_id = ? "
             "ORDER BY occurred_at DESC LIMIT ?",
-            (settings.region_id, limit),
+            (region_id, limit),
         ).fetchall()
     finally:
         conn.close()
