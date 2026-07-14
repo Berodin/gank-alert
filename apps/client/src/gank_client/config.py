@@ -3,7 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-API_BASE = os.environ.get("GANK_API_BASE", "http://127.0.0.1:8000")
+# Defaults to the maintainer's hosted instance so a downloaded release
+# binary works out of the box with no setup -- override with GANK_API_BASE
+# to point at your own self-hosted api instead (e.g. for local dev).
+API_BASE = os.environ.get("GANK_API_BASE", "https://gank.mkhcloud.de")
 
 CONFIG_DIR = Path.home() / ".config" / "gank-alert"
 TOKEN_FILE = CONFIG_DIR / "token.json"
