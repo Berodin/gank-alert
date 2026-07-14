@@ -8,7 +8,7 @@ from PySide6.QtMultimedia import QSoundEffect
 ASSETS = Path(__file__).parent / "assets" / "sounds"
 
 _TIER_FILES = {
-    "IMMINENT": "imminent.wav",
+    "FRESH": "fresh.wav",
     "RECENT": "recent.wav",
     "STAY WARY": "wary.wav",
 }

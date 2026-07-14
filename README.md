@@ -30,7 +30,7 @@ someone else picked, and `api` itself is entirely region-agnostic.
   before the ESI region lookup (cheap, in-memory match first), so the
   ingester only pays for a region resolution on kills that actually matter.
 - **Alerts are reminders, not one-shot notices**: a kill is posted again
-  each time it ages into a new tier -- 🔴 IMMINENT (<1h), 🟠 RECENT (<2h),
+  each time it ages into a new tier -- 🔴 FRESH (<1h), 🟠 RECENT (<2h),
   🟡 STAY WARY (<4h) -- so people still in the area get nudged as the
   threat window closes, not just once at detection time. Each (guild,
   kill, tier) combination fires exactly once; nothing is posted past 4h,

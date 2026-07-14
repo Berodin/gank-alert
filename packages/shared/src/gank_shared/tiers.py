@@ -4,7 +4,7 @@ categorized identically everywhere instead of two divergent systems."""
 
 from __future__ import annotations
 
-IMMINENT_MINUTES = 60
+FRESH_MINUTES = 60
 RECENT_MINUTES = 120
 WARY_MINUTES = 240
 
@@ -13,8 +13,11 @@ WARY_MINUTES = 240
 # a desaturated gray-blue rather than another warm tone: in a thin 3px feed
 # strip, orange vs. gold read as "the same color" at a glance -- fading to
 # gray reads unambiguously as "this is aging out."
+#
+# Labeled FRESH, not IMMINENT -- this tier means the kill already
+# happened moments ago, not that one is about to.
 TIERS: list[tuple[int, str, str]] = [
-    (IMMINENT_MINUTES, "IMMINENT", "#e74c3c"),
+    (FRESH_MINUTES, "FRESH", "#e74c3c"),
     (RECENT_MINUTES, "RECENT", "#e67e22"),
     (WARY_MINUTES, "STAY WARY", "#7f8c8d"),
 ]

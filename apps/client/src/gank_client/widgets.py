@@ -90,7 +90,7 @@ class SectionTitle(QLabel):
 class GankFeedRow(QWidget):
     """One row in the region feed: a left threat-color strip + kill summary.
 
-    `tier` is one of gank_shared.tiers' labels (IMMINENT/RECENT/STAY WARY),
+    `tier` is one of gank_shared.tiers' labels (FRESH/RECENT/STAY WARY),
     or None for anything older than that window -- shown dim/gray rather
     than excluded, since the feed is a broader history view, not just live
     alerts like the bot's."""

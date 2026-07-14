@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS guild_settings (
 );
 
 -- One row per (guild, killmail, tier) -- a kill is deliberately re-posted
--- as a reminder each time it crosses into a new staleness tier (IMMINENT
+-- as a reminder each time it crosses into a new staleness tier (FRESH
 -- -> RECENT -> STAY WARY), not just once. The tier is part of the key so
 -- each of those reminders fires exactly once.
 CREATE TABLE IF NOT EXISTS discord_posts (

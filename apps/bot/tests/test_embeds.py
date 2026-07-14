@@ -20,9 +20,9 @@ def _event(minutes_ago: float, total_value: float | None = 15_000_000.0) -> dict
     }
 
 
-def test_tier_for_age_imminent():
+def test_tier_for_age_fresh():
     label, _ = tier_for_age(5)
-    assert label == "IMMINENT"
+    assert label == "FRESH"
 
 
 def test_tier_for_age_recent():
@@ -79,7 +79,7 @@ def test_build_embed_uses_resolved_names():
     embed = build_embed(event, names)
 
     assert embed is not None
-    assert "IMMINENT" in embed.title
+    assert "FRESH" in embed.title
     assert "Tayra" in embed.title
     assert "Amarr" in embed.title
     field_values = {f.name: f.value for f in embed.fields}

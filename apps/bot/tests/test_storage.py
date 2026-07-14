@@ -64,21 +64,21 @@ def test_events_in_window_filters_by_age(tmp_path: Path):
 
 def test_mark_posted_is_per_tier(tmp_path: Path):
     conn = storage.connect(tmp_path / "db.sqlite3")
-    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="IMMINENT")
+    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="FRESH")
 
     posted = storage.posted_tiers_for_guild(conn, guild_id=1)
-    assert posted == {(100, "IMMINENT")}
+    assert posted == {(100, "FRESH")}
 
     # posting a later tier for the same kill is a separate reminder, not a dup
     storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="RECENT")
     posted = storage.posted_tiers_for_guild(conn, guild_id=1)
-    assert posted == {(100, "IMMINENT"), (100, "RECENT")}
+    assert posted == {(100, "FRESH"), (100, "RECENT")}
 
 
 def test_mark_posted_same_tier_twice_is_idempotent(tmp_path: Path):
     conn = storage.connect(tmp_path / "db.sqlite3")
-    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="IMMINENT")
-    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="IMMINENT")
+    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="FRESH")
+    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="FRESH")
 
     count = conn.execute("SELECT COUNT(*) FROM discord_posts").fetchone()[0]
     assert count == 1
@@ -88,9 +88,9 @@ def test_posted_tiers_is_per_guild_not_global(tmp_path: Path):
     """The same kill can be relevant to two guilds watching the same
     region -- posting it for guild A must not hide it from guild B."""
     conn = storage.connect(tmp_path / "db.sqlite3")
-    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="IMMINENT")
+    storage.mark_posted(conn, guild_id=1, killmail_id=100, tier="FRESH")
 
-    assert storage.posted_tiers_for_guild(conn, guild_id=1) == {(100, "IMMINENT")}
+    assert storage.posted_tiers_for_guild(conn, guild_id=1) == {(100, "FRESH")}
     assert storage.posted_tiers_for_guild(conn, guild_id=2) == set()
 
 
@@ -109,14 +109,14 @@ def _tier_dedup(conn, *, guild_id: int, killmail_id: int, age_minutes: float) ->
 def test_same_kill_is_due_again_after_crossing_into_a_new_tier(tmp_path: Path):
     """This is the actual point of the tiering system: a reminder, not a
     one-shot notice. The same killmail must come due again once it ages
-    into RECENT, even though it was already posted as IMMINENT."""
+    into RECENT, even though it was already posted as FRESH."""
     conn = storage.connect(tmp_path / "db.sqlite3")
 
     due = _tier_dedup(conn, guild_id=1, killmail_id=100, age_minutes=5)
-    assert due == "IMMINENT"
+    assert due == "FRESH"
     storage.mark_posted(conn, guild_id=1, killmail_id=100, tier=due)
 
-    # still within IMMINENT, already posted -- not due again yet
+    # still within FRESH, already posted -- not due again yet
     assert _tier_dedup(conn, guild_id=1, killmail_id=100, age_minutes=50) is None
 
     # aged into RECENT -- due as a reminder

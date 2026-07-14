@@ -74,7 +74,7 @@ class GankBot(discord.Client):
 
         # A kill is a repeating reminder, not a one-shot notice: it's
         # posted again each time it crosses into a new staleness tier
-        # (IMMINENT -> RECENT -> STAY WARY), so people still in the area
+        # (FRESH -> RECENT -> STAY WARY), so people still in the area
         # get nudged as the threat window closes, not just once at t=0.
         due = []
         for killmail_id, payload in rows:

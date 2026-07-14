@@ -1,9 +1,9 @@
 from gank_shared.tiers import tier_for_age
 
 
-def test_imminent_under_one_hour():
+def test_fresh_under_one_hour():
     label, _ = tier_for_age(5)
-    assert label == "IMMINENT"
+    assert label == "FRESH"
 
 
 def test_recent_between_one_and_two_hours():
