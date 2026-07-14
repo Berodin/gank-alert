@@ -9,11 +9,14 @@ RECENT_MINUTES = 120
 WARY_MINUTES = 240
 
 # (age ceiling in minutes, label, hex color) -- hex works directly as both
-# a Qt color string and (parsed) a discord.Color.
+# a Qt color string and (parsed) a discord.Color. STAY WARY is deliberately
+# a desaturated gray-blue rather than another warm tone: in a thin 3px feed
+# strip, orange vs. gold read as "the same color" at a glance -- fading to
+# gray reads unambiguously as "this is aging out."
 TIERS: list[tuple[int, str, str]] = [
     (IMMINENT_MINUTES, "IMMINENT", "#e74c3c"),
     (RECENT_MINUTES, "RECENT", "#e67e22"),
-    (WARY_MINUTES, "STAY WARY", "#f1c40f"),
+    (WARY_MINUTES, "STAY WARY", "#7f8c8d"),
 ]
 
 
