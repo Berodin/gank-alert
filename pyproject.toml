@@ -1,0 +1,14 @@
+[project]
+name = "gank-alert-workspace"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = ["apps/*", "packages/*"]
+
+[tool.uv.sources]
+gank-shared = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

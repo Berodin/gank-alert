@@ -1,0 +1,22 @@
+[project]
+name = "gank-ingester"
+version = "0.1.0"
+description = "Polls zKillboard R2Z2, filters to one region, classifies against the ganker list"
+requires-python = ">=3.12"
+dependencies = [
+    "gank-shared",
+    "httpx>=0.27",
+]
+
+[tool.uv.sources]
+gank-shared = { workspace = true }
+
+[project.scripts]
+gank-ingester = "gank_ingester.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gank_ingester"]

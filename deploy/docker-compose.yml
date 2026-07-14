@@ -1,0 +1,64 @@
+services:
+  ingester:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        APP: gank-ingester
+    restart: unless-stopped
+    environment:
+      GANK_REGION_ID: ${GANK_REGION_ID}
+      GANK_DB_PATH: /data/gank_alert.sqlite3
+    volumes:
+      - gank_data:/data
+
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        APP: gank-bot
+    restart: unless-stopped
+    depends_on:
+      - ingester
+    environment:
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      DISCORD_CHANNEL_ID: ${DISCORD_CHANNEL_ID}
+      GANK_DB_PATH: /data/gank_alert.sqlite3
+    volumes:
+      - gank_data:/data
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        APP: gank-api
+    restart: unless-stopped
+    depends_on:
+      - ingester
+    environment:
+      GANK_EVE_CLIENT_ID: ${GANK_EVE_CLIENT_ID}
+      GANK_EVE_REDIRECT_URI: ${GANK_EVE_REDIRECT_URI}
+      GANK_REGION_ID: ${GANK_REGION_ID}
+      GANK_DB_PATH: /data/gank_alert.sqlite3
+    volumes:
+      - gank_data:/data
+    networks:
+      - default
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.gank-api.rule=Host(`${GANK_API_DOMAIN}`)
+      - traefik.http.routers.gank-api.entrypoints=websecure
+      - traefik.http.routers.gank-api.tls.certresolver=le
+      - traefik.http.services.gank-api.loadbalancer.server.port=8000
+      - traefik.docker.network=lizard-intel_default
+
+networks:
+  traefik:
+    external: true
+    name: lizard-intel_default
+
+volumes:
+  gank_data:

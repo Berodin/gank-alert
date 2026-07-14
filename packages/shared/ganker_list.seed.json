@@ -1,0 +1,14 @@
+[
+  {
+    "entity_type": "alliance",
+    "entity_id": 99002775,
+    "entity_name": "CODE.",
+    "note": "New Order of Highsec -- the classic highsec mining/hauler ganking alliance. Verified via ESI /alliances/99002775/."
+  },
+  {
+    "entity_type": "alliance",
+    "entity_id": 99004901,
+    "entity_name": "Snuffed Out",
+    "note": "Verified via ESI /alliances/99004901/. Mixed PvP/ganking, not exclusively a ganking group -- reconsider inclusion criteria."
+  }
+]
