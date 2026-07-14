@@ -44,30 +44,51 @@ class GankBot(discord.Client):
             since_iso = (datetime.now(UTC) - timedelta(minutes=WARY_MINUTES)).isoformat()
 
             for guild_row in guilds:
-                channel = self.get_channel(guild_row["channel_id"])
-                if channel is None:
-                    logger.warning("channel %d not found for guild %d", guild_row["channel_id"], guild_row["guild_id"])
-                    continue
-
-                rows = storage.unposted_events_for_guild(
-                    conn, guild_id=guild_row["guild_id"], region_id=guild_row["region_id"], since_iso=since_iso
-                )
-                if not rows:
-                    continue
-
-                events = [json.loads(payload) for _, payload in rows]
-                all_ids: set[int] = set()
-                for event in events:
-                    all_ids |= collect_ids(event)
-                names = self.esi.resolve_names(list(all_ids))
-
-                for event in events:
-                    embed = build_embed(event, names)
-                    if embed is not None:
-                        await channel.send(embed=embed)
-                    storage.mark_posted(conn, guild_id=guild_row["guild_id"], killmail_id=event["killmail_id"])
+                # One guild's bad channel permissions (etc) must not take
+                # down alerts for every other guild, or stop the loop
+                # entirely -- discord.ext.tasks.Loop does not auto-restart
+                # after an unhandled exception.
+                try:
+                    await self._post_for_guild(conn, guild_row, since_iso)
+                except Exception:
+                    logger.exception("failed to post alerts for guild_id=%d", guild_row["guild_id"])
         finally:
             conn.close()
+
+    async def _post_for_guild(self, conn, guild_row, since_iso: str) -> None:
+        channel = self.get_channel(guild_row["channel_id"])
+        if channel is None:
+            logger.warning(
+                "channel %d not found for guild %d", guild_row["channel_id"], guild_row["guild_id"]
+            )
+            return
+
+        rows = storage.unposted_events_for_guild(
+            conn, guild_id=guild_row["guild_id"], region_id=guild_row["region_id"], since_iso=since_iso
+        )
+        if not rows:
+            return
+
+        events = [json.loads(payload) for _, payload in rows]
+        all_ids: set[int] = set()
+        for event in events:
+            all_ids |= collect_ids(event)
+        names = self.esi.resolve_names(list(all_ids))
+
+        for event in events:
+            embed = build_embed(event, names)
+            if embed is not None:
+                try:
+                    await channel.send(embed=embed)
+                except discord.Forbidden:
+                    logger.error(
+                        "missing permissions to post in channel %d (guild %d) -- check the bot has "
+                        "View Channel/Send Messages/Embed Links there. Will retry next cycle.",
+                        guild_row["channel_id"],
+                        guild_row["guild_id"],
+                    )
+                    return  # same failure for every remaining event this cycle, stop here
+            storage.mark_posted(conn, guild_id=guild_row["guild_id"], killmail_id=event["killmail_id"])
 
     @poll_gank_events.before_loop
     async def _before_poll(self) -> None:
