@@ -15,6 +15,8 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 
+import httpx
+
 AUTHORIZE_URL = "https://login.eveonline.com/v2/oauth/authorize"
 TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
 JWKS_ISSUER = "https://login.eveonline.com"
@@ -47,6 +49,28 @@ def decode_unverified_jwt(access_token: str) -> dict:
     payload_b64 = access_token.split(".")[1]
     padded = payload_b64 + "=" * (-len(payload_b64) % 4)
     return json.loads(base64.urlsafe_b64decode(padded))
+
+
+def refresh_access_token(*, client_id: str, refresh_token: str) -> dict:
+    """Exchange a refresh token for a new access token + refresh token.
+
+    EVE SSO rotates the refresh token on every use -- the old one is
+    invalidated, so the caller MUST persist the new refresh_token from the
+    response or the character will need to log in again once the old
+    access token expires (~20 min).
+    """
+    resp = httpx.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=15.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def build_authorize_url(*, client_id: str, redirect_uri: str, scopes: list[str], pkce: PKCEChallenge) -> str:

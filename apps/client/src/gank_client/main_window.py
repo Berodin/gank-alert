@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -11,21 +14,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gank_shared.esi import ESIClient
+
 from gank_client import theme
+from gank_client.controller import Controller
 from gank_client.widgets import GankFeedRow, HudPanel, SectionTitle, fix_transparency
 
-# Placeholder feed data -- apps/api isn't wired up yet, this is here to
-# validate the visual design end to end.
-MOCK_FEED = [
-    dict(time_label="00:44", system_name="Uedama", victim_ship="Iteron Mark V",
-         ganker_tag="CODE.", jumps=2, threat="fresh"),
-    dict(time_label="00:31", system_name="Sivala", victim_ship="Retriever",
-         ganker_tag="CODE.", jumps=5, threat="recent"),
-    dict(time_label="23:58", system_name="Perimeter", victim_ship="Bestower",
-         ganker_tag="Snuffed Out", jumps=7, threat="recent"),
-    dict(time_label="23:40", system_name="Niarja", victim_ship="Providence",
-         ganker_tag="CODE.", jumps=11, threat="stale"),
-]
+logger = logging.getLogger("gank_client.main_window")
 
 
 class MainWindow(QMainWindow):
@@ -34,6 +29,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("GANK ALERT")
         self.resize(880, 640)
         self.setMinimumSize(720, 520)
+
+        self.esi = ESIClient(component="client")
+        self.controller = Controller()
 
         central = QWidget()
         central.setStyleSheet(f"background-color: {theme.BG_VOID};")
@@ -52,6 +50,19 @@ class MainWindow(QMainWindow):
         outer.addLayout(body, stretch=1)
 
         fix_transparency(central)
+
+        self.controller.login_changed.connect(self._on_login_changed)
+        self.controller.feed_updated.connect(self._on_feed_updated)
+        self.controller.location_updated.connect(self._on_location_updated)
+
+        self._latest_feed: list[dict] = []
+        self._my_location: dict | None = None
+        self._on_login_changed()
+        self.controller.start()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self.esi.close()
+        super().closeEvent(event)
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -84,39 +95,40 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(SectionTitle("PILOT"))
 
-        name_lbl = QLabel("NOT LOGGED IN")
-        name_lbl.setStyleSheet(
+        self.name_lbl = QLabel("NOT LOGGED IN")
+        self.name_lbl.setStyleSheet(
             f"font-family: '{theme.FONT_DISPLAY}'; font-size: 15px; color: {theme.TEXT_DIM};"
         )
-        layout.addWidget(name_lbl)
+        layout.addWidget(self.name_lbl)
 
-        login_btn = QPushButton("LOG IN WITH EVE")
-        layout.addWidget(login_btn)
+        self.login_btn = QPushButton("LOG IN WITH EVE")
+        self.login_btn.clicked.connect(self._on_login_button)
+        layout.addWidget(self.login_btn)
 
         layout.addSpacing(10)
         layout.addWidget(SectionTitle("CURRENT SYSTEM"))
-        system_lbl = QLabel("—")
-        system_lbl.setStyleSheet(
+        self.system_lbl = QLabel("—")
+        self.system_lbl.setStyleSheet(
             f"font-family: '{theme.FONT_DISPLAY}'; font-size: 15px; color: {theme.TEXT_PRIMARY};"
         )
-        layout.addWidget(system_lbl)
+        layout.addWidget(self.system_lbl)
 
         layout.addSpacing(10)
         layout.addWidget(SectionTitle("NEAREST GANK"))
 
         dist_row = QHBoxLayout()
-        dist_val = QLabel("2")
-        dist_val.setProperty("role", "statValue")
+        self.dist_val = QLabel("—")
+        self.dist_val.setProperty("role", "statValue")
         dist_unit = QLabel("JUMPS")
         dist_unit.setProperty("role", "statUnit")
-        dist_row.addWidget(dist_val)
+        dist_row.addWidget(self.dist_val)
         dist_row.addWidget(dist_unit, alignment=Qt.AlignmentFlag.AlignBottom)
         dist_row.addStretch()
         layout.addLayout(dist_row)
 
-        last_seen = QLabel("Uedama · CODE. · 12m ago")
-        last_seen.setProperty("role", "dim")
-        layout.addWidget(last_seen)
+        self.last_seen_lbl = QLabel("no data yet")
+        self.last_seen_lbl.setProperty("role", "dim")
+        layout.addWidget(self.last_seen_lbl)
 
         layout.addStretch()
         return panel
@@ -132,15 +144,102 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("background: transparent;")
 
-        feed_widget = QWidget()
-        feed_widget.setStyleSheet("background: transparent;")
-        feed_layout = QVBoxLayout(feed_widget)
-        feed_layout.setSpacing(4)
+        self.feed_widget = QWidget()
+        self.feed_widget.setStyleSheet("background: transparent;")
+        self.feed_layout = QVBoxLayout(self.feed_widget)
+        self.feed_layout.setSpacing(4)
+        self.feed_layout.addStretch()
 
-        for entry in MOCK_FEED:
-            feed_layout.addWidget(GankFeedRow(**entry))
-        feed_layout.addStretch()
-
-        scroll.setWidget(feed_widget)
+        scroll.setWidget(self.feed_widget)
         layout.addWidget(scroll, stretch=1)
         return panel
+
+    def _on_login_button(self) -> None:
+        if self.controller.api.is_logged_in:
+            self.controller.logout()
+        else:
+            self.login_btn.setText("WAITING FOR BROWSER…")
+            self.login_btn.setEnabled(False)
+            self.controller.begin_login()
+
+    def _on_login_changed(self) -> None:
+        api = self.controller.api
+        self.login_btn.setEnabled(True)
+        if api.is_logged_in:
+            self.name_lbl.setText(api.character_name.upper())
+            self.name_lbl.setStyleSheet(
+                f"font-family: '{theme.FONT_DISPLAY}'; font-size: 15px; color: {theme.ACCENT_CYAN};"
+            )
+            self.login_btn.setText("LOG OUT")
+        else:
+            self.name_lbl.setText("NOT LOGGED IN")
+            self.name_lbl.setStyleSheet(
+                f"font-family: '{theme.FONT_DISPLAY}'; font-size: 15px; color: {theme.TEXT_DIM};"
+            )
+            self.login_btn.setText("LOG IN WITH EVE")
+            self.system_lbl.setText("—")
+
+    def _on_feed_updated(self, feed: list[dict]) -> None:
+        self._latest_feed = feed
+
+        while self.feed_layout.count() > 1:
+            item = self.feed_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for event in feed[:30]:
+            try:
+                system_name = self.esi.system_name(event["solar_system_id"])
+            except Exception:
+                logger.exception("failed to resolve system name")
+                system_name = str(event["solar_system_id"])
+
+            occurred_at = datetime.fromisoformat(event["occurred_at"])
+            age_minutes = (datetime.now(occurred_at.tzinfo) - occurred_at).total_seconds() / 60
+            threat = "fresh" if age_minutes < 10 else "recent" if age_minutes < 60 else "stale"
+
+            row = GankFeedRow(
+                time_label=occurred_at.strftime("%H:%M"),
+                system_name=system_name,
+                victim_ship=f"ship type {event['victim']['ship_type_id']}",
+                ganker_tag=", ".join(m["entity_name"] for m in event["matched_entities"]) or "unknown",
+                jumps=None,
+                threat=threat,
+            )
+            self.feed_layout.insertWidget(self.feed_layout.count() - 1, row)
+
+        self._update_nearest_gank()
+
+    def _on_location_updated(self, location: dict | None) -> None:
+        self._my_location = location
+        if location is None:
+            self.system_lbl.setText("—" if not self.controller.api.is_logged_in else "unknown")
+            self._update_nearest_gank()
+            return
+        try:
+            name = self.esi.system_name(location["solar_system_id"])
+        except Exception:
+            logger.exception("failed to resolve current system name")
+            name = str(location["solar_system_id"])
+        self.system_lbl.setText(name.upper())
+        self._update_nearest_gank()
+
+    def _update_nearest_gank(self) -> None:
+        if not self._latest_feed:
+            return
+        if self._my_location is None:
+            self.dist_val.setText("—")
+            return
+
+        latest = self._latest_feed[0]
+        jumps = self.controller.api.get_jump_distance(
+            self._my_location["solar_system_id"], latest["solar_system_id"]
+        )
+        self.dist_val.setText(str(jumps) if jumps is not None else "—")
+
+        try:
+            system_name = self.esi.system_name(latest["solar_system_id"])
+        except Exception:
+            system_name = str(latest["solar_system_id"])
+        tag = ", ".join(m["entity_name"] for m in latest["matched_entities"]) or "unknown"
+        self.last_seen_lbl.setText(f"{system_name} · {tag}")

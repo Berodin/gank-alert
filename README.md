@@ -50,21 +50,34 @@ Polls R2Z2 live, resolves regions, classifies against the seed ganker list,
 persists a resume cursor. Verified working end to end against production
 R2Z2 and ESI.
 
-Needs your own credentials/setup before it does anything useful:
+`packages/shared/universe_graph.json` (stargate adjacency for all ~5,268
+known-space systems) is built and committed -- `api`'s `/jump-distance` does
+a real BFS shortest-path over it, verified against known routes (Jita ->
+Amarr = 11 jumps). Rebuild with `uv run --package gank-shared python -m
+gank_shared.universe_graph <path>` if CCP adds/removes stargates (rare,
+maybe once or twice a year with expansions) -- it's ~21,500 ESI calls, takes
+a few minutes.
+
+`gank-client` is wired to `api` for real: SSO login (PKCE, via a system
+browser + one-shot localhost loopback server -- necessary because EVE's
+fixed redirect URI points at `api`, not the client, so `api` hands the
+issued token back to the client's loopback listener), the region feed, and
+jump-distance are all live calls, verified end-to-end against a running
+`api` instance. `api` now polls each linked character's location in the
+background (refreshing their EVE SSO token every cycle, since EVE rotates
+refresh tokens on use) rather than having the client push it -- keeps raw
+EVE OAuth tokens off the client machine entirely, only api's own opaque
+token round-trips there.
+
+Needs your own credentials/setup before it does anything useful end-to-end:
 
 - **bot**: needs a Discord bot token + channel ID (`DISCORD_BOT_TOKEN`,
   `DISCORD_CHANNEL_ID`) from https://discord.com/developers/applications.
-- **api**: needs an EVE developer app
+- **api** / **client** login: needs an EVE developer app
   (https://developers.eveonline.com) of type **public client** (PKCE, no
   secret) with scope `esi-location.read_location.v1` and redirect URI
-  matching `GANK_EVE_REDIRECT_URI`.
-- **client**: not yet wired to `api` (SSO login button and feed are
-  placeholder/mock data) -- the visual design is real, the plumbing to
-  `api`'s `/auth/eve/login`, `/location`, `/feed` endpoints isn't connected
-  yet.
-- **jump-distance**: `api`'s `/jump-distance` endpoint is a stub. Needs the
-  static stargate graph (from ESI `/universe/systems/*/stargates` or the
-  SDE) for a shortest-path search -- not built yet.
+  matching `GANK_EVE_REDIRECT_URI` (must point at `api`'s
+  `/auth/eve/callback`, not the client).
 - **ganker list**: only 2 seed entries (CODE., Snuffed Out), verified via
   ESI but not curated -- expand `ganker_list.seed.json` with whatever groups
   you actually want to track.
@@ -92,6 +105,8 @@ cp deploy/.env.example deploy/.env   # fill in values
 cd deploy && docker compose up -d --build
 ```
 
-`gank-client` is not deployed -- it's built per-OS (Windows/Linux) via
-PyInstaller in CI and distributed as a GitHub release artifact. Not set up
-yet (no CI workflow exists in this repo yet).
+`gank-client` is not deployed -- `.github/workflows/ci.yml` builds it per-OS
+(Windows/Linux) via PyInstaller (`apps/client/gank_client.spec`) on every
+push and, on a `v*` tag, attaches both binaries to a GitHub release. The
+same workflow builds and pushes `ingester`/`bot`/`api` images to
+`ghcr.io/<repo>-<app>` on pushes to `main`.

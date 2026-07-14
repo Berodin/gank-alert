@@ -21,16 +21,30 @@ from gank_api.config import settings
 
 router = APIRouter(prefix="/auth/eve", tags=["auth"])
 
-# state -> (verifier, created_at). TTL-expire on lookup; single-process only
-# -- fine for now, move to the DB if the api ever runs with >1 worker.
-_pending: dict[str, tuple[str, float]] = {}
+# state -> (verifier, return_to, created_at). TTL-expire on lookup;
+# single-process only -- fine for now, move to the DB if the api ever runs
+# with >1 worker.
+_pending: dict[str, tuple[str, str | None, float]] = {}
 _PENDING_TTL_SECONDS = 300
 
 
+def _is_safe_loopback(url: str) -> bool:
+    """return_to must point at the caller's own loopback listener -- never
+    follow it otherwise, or a crafted login link could exfiltrate a freshly
+    issued api_token to an attacker's server (open-redirect)."""
+    return url.startswith("http://127.0.0.1:") or url.startswith("http://localhost:")
+
+
 @router.get("/login")
-def login() -> RedirectResponse:
+def login(return_to: str | None = None) -> RedirectResponse:
+    """return_to: optional http://127.0.0.1:<port>/... the desktop client
+    is listening on. If set, /callback redirects the browser back there
+    with the api_token instead of returning it as raw JSON."""
+    if return_to is not None and not _is_safe_loopback(return_to):
+        raise HTTPException(400, "return_to must be a loopback (127.0.0.1/localhost) URL")
+
     pkce = new_pkce_challenge()
-    _pending[pkce.state] = (pkce.verifier, time.monotonic())
+    _pending[pkce.state] = (pkce.verifier, return_to, time.monotonic())
     url = build_authorize_url(
         client_id=settings.eve_client_id,
         redirect_uri=settings.eve_redirect_uri,
@@ -41,11 +55,11 @@ def login() -> RedirectResponse:
 
 
 @router.get("/callback")
-def callback(code: str, state: str) -> dict:
+def callback(code: str, state: str):
     pending = _pending.pop(state, None)
     if pending is None:
         raise HTTPException(400, "unknown or expired state")
-    verifier, created_at = pending
+    verifier, return_to, created_at = pending
     if time.monotonic() - created_at > _PENDING_TTL_SECONDS:
         raise HTTPException(400, "login expired, try again")
 
@@ -89,8 +103,14 @@ def callback(code: str, state: str) -> dict:
     finally:
         conn.close()
 
-    # TODO: for the desktop client this should redirect to a loopback URL
-    # the client is listening on, rather than returning JSON directly.
+    if return_to is not None:
+        from urllib.parse import urlencode
+
+        params = urlencode(
+            {"api_token": api_token, "character_id": character_id, "character_name": character_name}
+        )
+        return RedirectResponse(f"{return_to}?{params}")
+
     return {"api_token": api_token, "character_id": character_id, "character_name": character_name}
 
 

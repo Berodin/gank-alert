@@ -28,17 +28,19 @@ class ESIClient:
         )
         self._system_region_cache: dict[int, int] = {}
         self._constellation_region_cache: dict[int, int] = {}
+        self._system_name_cache: dict[int, str] = {}
         self._error_cooldown_until: float = 0.0
 
     def close(self) -> None:
         self._client.close()
 
-    def _get(self, path: str) -> httpx.Response:
+    def _get(self, path: str, *, access_token: str | None = None) -> httpx.Response:
         if (wait := self._error_cooldown_until - time.monotonic()) > 0:
             logger.warning("ESI error budget exhausted, sleeping %.1fs", wait)
             time.sleep(wait)
 
-        resp = self._client.get(path)
+        headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
+        resp = self._client.get(path, headers=headers)
 
         remain = resp.headers.get("X-Esi-Error-Limit-Remain")
         reset = resp.headers.get("X-Esi-Error-Limit-Reset")
@@ -61,6 +63,7 @@ class ESIClient:
 
         system = self._get(f"/universe/systems/{solar_system_id}/").json()
         constellation_id = system["constellation_id"]
+        self._system_name_cache[solar_system_id] = system["name"]
 
         region_id = self._constellation_region_cache.get(constellation_id)
         if region_id is None:
@@ -71,6 +74,12 @@ class ESIClient:
         self._system_region_cache[solar_system_id] = region_id
         return region_id
 
+    def system_name(self, solar_system_id: int) -> str:
+        if solar_system_id not in self._system_name_cache:
+            system = self._get(f"/universe/systems/{solar_system_id}/").json()
+            self._system_name_cache[solar_system_id] = system["name"]
+        return self._system_name_cache[solar_system_id]
+
     def get_killmail(self, killmail_id: int, killmail_hash: str) -> dict:
         """Fetch the authoritative killmail directly from ESI (public, no auth).
 
@@ -78,3 +87,7 @@ class ESIClient:
         but kept for spot-verification.
         """
         return self._get(f"/killmails/{killmail_id}/{killmail_hash}/").json()
+
+    def get_character_location(self, character_id: int, access_token: str) -> dict:
+        """Requires the esi-location.read_location.v1 scope on access_token."""
+        return self._get(f"/characters/{character_id}/location/", access_token=access_token).json()
