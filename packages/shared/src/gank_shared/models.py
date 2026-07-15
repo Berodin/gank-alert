@@ -38,6 +38,10 @@ class GankEvent(BaseModel):
     occurred_at: datetime
     solar_system_id: int
     region_id: int | None = None
+    location_id: int | None = None
+    """zkb.locationID -- a station/structure/celestial (belt, gate, moon,
+    planet) ID pinpointing where in the system this happened. Resolve via
+    ESIClient.resolve_location_name()."""
 
     victim: Participant
     attackers: list[Participant]

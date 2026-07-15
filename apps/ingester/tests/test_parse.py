@@ -55,6 +55,7 @@ def test_parse_package_maps_core_fields():
     assert event.solar_system_id == 30001784
     assert event.sequence_id == 98531146
     assert event.total_value == 10000
+    assert event.location_id == 40114185
     assert event.region_id is None  # filled in later by the caller
     assert event.is_gank is False
 

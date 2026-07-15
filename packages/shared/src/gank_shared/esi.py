@@ -11,6 +11,14 @@ logger = logging.getLogger(__name__)
 
 ESI_BASE = "https://esi.evetech.net/latest"
 
+# ESI has no single "resolve any celestial/station ID" endpoint -- each
+# type is a separate path, and IDs don't self-identify their type. Probed
+# in roughly descending order of how often ganks actually happen there.
+LOCATION_PROBE_KINDS = ["stargates", "asteroid_belts", "stations", "moons", "planets"]
+STRUCTURE_ID_THRESHOLD = 1_000_000_000_000
+"""Player-owned (Upwell) structures start around here and need an auth
+token with docking access to resolve -- not worth probing for blindly."""
+
 
 class ESIClient:
     """Minimal rate-limit-aware ESI client.
@@ -29,6 +37,7 @@ class ESIClient:
         self._system_region_cache: dict[int, int] = {}
         self._constellation_region_cache: dict[int, int] = {}
         self._system_name_cache: dict[int, str] = {}
+        self._location_name_cache: dict[int, str] = {}
         self._error_cooldown_until: float = 0.0
 
     def close(self) -> None:
@@ -98,6 +107,26 @@ class ESIClient:
         resp.raise_for_status()
         regions = resp.json().get("regions") or []
         return regions[0]["id"] if regions else None
+
+    def resolve_location_name(self, location_id: int) -> str:
+        """zkb.locationID -> a human-readable spot in the system (asteroid
+        belt, stargate, station, moon, planet). Probes each celestial
+        endpoint in turn since ESI doesn't expose a type-agnostic lookup;
+        result is cached forever since these never change."""
+        if location_id in self._location_name_cache:
+            return self._location_name_cache[location_id]
+
+        name = None
+        if location_id < STRUCTURE_ID_THRESHOLD:
+            for kind in LOCATION_PROBE_KINDS:
+                resp = self._client.get(f"/universe/{kind}/{location_id}/")
+                if resp.status_code == 200:
+                    name = resp.json()["name"]
+                    break
+
+        name = name or f"location {location_id}"
+        self._location_name_cache[location_id] = name
+        return name
 
     def resolve_names(self, ids: list[int]) -> dict[int, str]:
         """Batch-resolve any mix of character/corporation/alliance/system/

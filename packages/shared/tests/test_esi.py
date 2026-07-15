@@ -90,6 +90,53 @@ def test_resolve_region_by_name_not_found(esi: ESIClient):
 
 
 @respx.mock
+def test_resolve_location_name_tries_endpoints_until_one_succeeds(esi: ESIClient):
+    stargates_route = respx.get("https://esi.evetech.net/latest/universe/stargates/40333261/").mock(
+        return_value=httpx.Response(404)
+    )
+    belts_route = respx.get("https://esi.evetech.net/latest/universe/asteroid_belts/40333261/").mock(
+        return_value=httpx.Response(200, json={"name": "Simela VII - Asteroid Belt 2"})
+    )
+    stations_route = respx.get("https://esi.evetech.net/latest/universe/stations/40333261/")
+
+    name = esi.resolve_location_name(40333261)
+
+    assert name == "Simela VII - Asteroid Belt 2"
+    assert stargates_route.call_count == 1
+    assert belts_route.call_count == 1
+    assert stations_route.call_count == 0  # stopped probing once belts succeeded
+
+
+@respx.mock
+def test_resolve_location_name_is_cached(esi: ESIClient):
+    route = respx.get("https://esi.evetech.net/latest/universe/stargates/1/").mock(
+        return_value=httpx.Response(200, json={"name": "Some Stargate"})
+    )
+
+    assert esi.resolve_location_name(1) == "Some Stargate"
+    assert esi.resolve_location_name(1) == "Some Stargate"
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_resolve_location_name_falls_back_when_nothing_matches(esi: ESIClient):
+    for kind in ["stargates", "asteroid_belts", "stations", "moons", "planets"]:
+        respx.get(f"https://esi.evetech.net/latest/universe/{kind}/999/").mock(
+            return_value=httpx.Response(404)
+        )
+
+    assert esi.resolve_location_name(999) == "location 999"
+
+
+@respx.mock
+def test_resolve_location_name_skips_probing_for_structure_ids(esi: ESIClient):
+    # No routes registered -- respx raises on any unmocked request, so this
+    # also proves player-structure IDs never get probed over HTTP.
+    name = esi.resolve_location_name(1_000_000_000_001)
+    assert name == "location 1000000000001"
+
+
+@respx.mock
 def test_420_sets_error_cooldown(esi: ESIClient):
     respx.get("https://esi.evetech.net/latest/universe/systems/1/").mock(
         return_value=httpx.Response(420, headers={"Retry-After": "30"})

@@ -95,3 +95,19 @@ def test_build_embed_falls_back_to_raw_ids_when_unresolved():
 
     assert "ship type 649" in embed.title
     assert "system 30002187" in embed.title
+
+
+def test_build_embed_includes_location_when_given():
+    event = _event(minutes_ago=5)
+    embed = build_embed(event, names={}, location_name="Simela VII - Asteroid Belt 2")
+
+    field_values = {f.name: f.value for f in embed.fields}
+    assert field_values["Location"] == "Simela VII - Asteroid Belt 2"
+
+
+def test_build_embed_omits_location_field_when_not_given():
+    event = _event(minutes_ago=5)
+    embed = build_embed(event, names={})
+
+    field_names = {f.name for f in embed.fields}
+    assert "Location" not in field_names

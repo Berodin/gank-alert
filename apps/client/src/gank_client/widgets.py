@@ -3,9 +3,11 @@ panels with glowing viewfinder-style corner brackets."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from gank_client import theme
 
@@ -104,8 +106,11 @@ class GankFeedRow(QWidget):
         victim_ship: str,
         ganker_tag: str,
         value_str: str,
+        attacker_count: int,
+        location_name: str | None,
         jumps: int | None,
         tier: tuple[str, str] | None,
+        on_dismiss: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -137,12 +142,19 @@ class GankFeedRow(QWidget):
         middle = QLabel(f"{victim_name} lost a {victim_ship} ({value_str})")
         middle.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 12px;")
 
-        bottom = QLabel(f"Killed by {ganker_tag}")
+        attacker_word = "attacker" if attacker_count == 1 else "attackers"
+        bottom = QLabel(f"Killed by {ganker_tag} · {attacker_count} {attacker_word}")
         bottom.setProperty("role", "dim")
 
         text_col.addLayout(top)
         text_col.addWidget(middle)
         text_col.addWidget(bottom)
+
+        if location_name:
+            location_lbl = QLabel(location_name)
+            location_lbl.setProperty("role", "dim")
+            text_col.addWidget(location_lbl)
+
         root.addLayout(text_col, stretch=1)
 
         if jumps is not None:
@@ -152,3 +164,14 @@ class GankFeedRow(QWidget):
             )
             jump_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             root.addWidget(jump_lbl)
+
+        if on_dismiss is not None:
+            dismiss_btn = QPushButton("×")
+            dismiss_btn.setFixedSize(20, 20)
+            dismiss_btn.setStyleSheet(
+                f"QPushButton {{ color: {theme.TEXT_DIM}; border: none; font-size: 14px; }}"
+                f"QPushButton:hover {{ color: {theme.ACCENT_RED}; }}"
+            )
+            dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            dismiss_btn.clicked.connect(on_dismiss)
+            root.addWidget(dismiss_btn, alignment=Qt.AlignmentFlag.AlignTop)

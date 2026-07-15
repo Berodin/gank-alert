@@ -98,7 +98,10 @@ class GankBot(discord.Client):
         names = self.esi.resolve_names(list(all_ids))
 
         for killmail_id, label, event in due:
-            embed = build_embed(event, names)
+            location_name = None
+            if event.get("location_id"):
+                location_name = self.esi.resolve_location_name(event["location_id"])
+            embed = build_embed(event, names, location_name)
             if embed is not None:
                 try:
                     await channel.send(embed=embed)

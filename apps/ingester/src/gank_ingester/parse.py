@@ -54,6 +54,7 @@ def parse_package(package: dict) -> GankEvent:
         occurred_at=datetime.fromisoformat(esi["killmail_time"].replace("Z", "+00:00")),
         solar_system_id=esi["solar_system_id"],
         region_id=None,
+        location_id=zkb.get("locationID"),
         victim=victim,
         attackers=attackers,
         total_value=zkb.get("totalValue"),

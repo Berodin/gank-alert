@@ -21,7 +21,7 @@ def collect_ids(event: dict) -> set[int]:
     return ids
 
 
-def build_embed(event: dict, names: dict[int, str]) -> discord.Embed | None:
+def build_embed(event: dict, names: dict[int, str], location_name: str | None = None) -> discord.Embed | None:
     occurred_at = datetime.fromisoformat(event["occurred_at"])
     age_minutes = (datetime.now(UTC) - occurred_at).total_seconds() / 60
 
@@ -59,5 +59,7 @@ def build_embed(event: dict, names: dict[int, str]) -> discord.Embed | None:
     embed.add_field(name="Ganker group", value=ganker_tags, inline=True)
     embed.add_field(name="Involved", value=str(len(event["attackers"])), inline=True)
     embed.add_field(name="Value", value=format_isk(event.get("total_value")), inline=True)
+    if location_name:
+        embed.add_field(name="Location", value=location_name, inline=True)
     embed.set_footer(text=f"{system_name}")
     return embed

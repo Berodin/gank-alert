@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import partial
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -26,6 +27,11 @@ from gank_client.sound import SoundPlayer
 from gank_client.widgets import GankFeedRow, HudPanel, SectionTitle, fix_transparency
 
 logger = logging.getLogger("gank_client.main_window")
+
+FEED_EXPIRE_HOURS = 6
+"""Kills older than this drop out of the feed entirely, same idea as the
+bot's 4h alert cutoff but a bit more generous since this is a browsable
+history view, not just live alerts."""
 
 
 class MainWindow(QMainWindow):
@@ -64,6 +70,7 @@ class MainWindow(QMainWindow):
         self.controller.new_alert.connect(self.sound_player.play)
 
         self._latest_feed: list[dict] = []
+        self._dismissed_ids: set[int] = set()
         self._my_location: dict | None = None
         self._on_login_changed()
         self._on_region_changed()
@@ -220,15 +227,30 @@ class MainWindow(QMainWindow):
     def _on_region_changed(self) -> None:
         self.region_sub_lbl.setText(f"REGION WATCH — {self.controller.api.region_name.upper()}")
 
+    def _visible_feed(self) -> list[dict]:
+        cutoff = datetime.now().astimezone() - timedelta(hours=FEED_EXPIRE_HOURS)
+        return [
+            event
+            for event in self._latest_feed
+            if event["killmail_id"] not in self._dismissed_ids
+            and datetime.fromisoformat(event["occurred_at"]) >= cutoff
+        ]
+
+    def _dismiss_event(self, killmail_id: int) -> None:
+        self._dismissed_ids.add(killmail_id)
+        self._render_feed()
+
     def _on_feed_updated(self, feed: list[dict]) -> None:
         self._latest_feed = feed
+        self._render_feed()
 
+    def _render_feed(self) -> None:
         while self.feed_layout.count() > 1:
             item = self.feed_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        visible = feed[:30]
+        visible = self._visible_feed()[:30]
         ids: set[int] = set()
         for event in visible:
             ids.add(event["solar_system_id"])
@@ -248,6 +270,13 @@ class MainWindow(QMainWindow):
             ship_name = names.get(victim["ship_type_id"], f"ship type {victim['ship_type_id']}")
             victim_name = names.get(victim.get("character_id"), "unknown pilot")
 
+            location_name = None
+            if event.get("location_id"):
+                try:
+                    location_name = self.esi.resolve_location_name(event["location_id"])
+                except Exception:
+                    logger.exception("failed to resolve location name")
+
             # occurred_at comes back as UTC from the api -- show it in
             # whatever timezone this PC is set to, not raw UTC.
             occurred_at = datetime.fromisoformat(event["occurred_at"])
@@ -262,8 +291,11 @@ class MainWindow(QMainWindow):
                 victim_ship=ship_name,
                 ganker_tag=", ".join(m["entity_name"] for m in event["matched_entities"]) or "unknown",
                 value_str=format_isk(event.get("total_value")),
+                attacker_count=len(event["attackers"]),
+                location_name=location_name,
                 jumps=None,
                 tier=tier,
+                on_dismiss=partial(self._dismiss_event, event["killmail_id"]),
             )
             self.feed_layout.insertWidget(self.feed_layout.count() - 1, row)
 
@@ -284,13 +316,16 @@ class MainWindow(QMainWindow):
         self._update_nearest_gank()
 
     def _update_nearest_gank(self) -> None:
-        if not self._latest_feed:
+        visible = self._visible_feed()
+        if not visible:
+            self.dist_val.setText("—")
+            self.last_seen_lbl.setText("no data yet")
             return
         if self._my_location is None:
             self.dist_val.setText("—")
             return
 
-        latest = self._latest_feed[0]
+        latest = visible[0]
         jumps = self.controller.api.get_jump_distance(
             self._my_location["solar_system_id"], latest["solar_system_id"]
         )
