@@ -29,7 +29,13 @@ def fetch_current_labels(killmail_id: int, *, client: httpx.Client | None = None
         timeout=15.0, headers={"User-Agent": build_user_agent("ingester-recheck")}
     )
     try:
-        resp = client.get(f"{BASE}/killID/{killmail_id}/")
+        # killID is documented as a modifier combined with a /kills/ (or
+        # /losses/) prefix, not a standalone endpoint -- the bare
+        # /api/killID/{id}/ shortcut appears to hit a staler cache and
+        # returns [] for recently-created kills, confirmed in production
+        # against a real kill that had "ganked" via this path but not that
+        # one. Always use the documented /kills/killID/ form.
+        resp = client.get(f"{BASE}/kills/killID/{killmail_id}/")
         if resp.status_code != 200:
             return []
         rows = resp.json()
