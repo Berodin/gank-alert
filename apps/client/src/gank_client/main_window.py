@@ -258,6 +258,12 @@ class MainWindow(QMainWindow):
             for key in ("character_id", "corporation_id"):
                 if event["victim"].get(key):
                     ids.add(event["victim"][key])
+            if not event["matched_entities"]:
+                final_blow = next((a for a in event["attackers"] if a.get("final_blow")), None)
+                if final_blow:
+                    for key in ("corporation_id", "alliance_id"):
+                        if final_blow.get(key):
+                            ids.add(final_blow[key])
         try:
             names = self.esi.resolve_names(list(ids))
         except Exception:
@@ -277,6 +283,21 @@ class MainWindow(QMainWindow):
                 except Exception:
                     logger.exception("failed to resolve location name")
 
+            if event["matched_entities"]:
+                ganker_tag = ", ".join(m["entity_name"] for m in event["matched_entities"])
+            else:
+                # Not on our curated list, but zKillboard's own heuristic
+                # flagged this as a gank -- show who actually did it
+                # instead of a bare "unknown".
+                final_blow = next((a for a in event["attackers"] if a.get("final_blow")), None)
+                ganker_tag = "unknown"
+                if final_blow:
+                    ganker_tag = (
+                        names.get(final_blow.get("alliance_id"))
+                        or names.get(final_blow.get("corporation_id"))
+                        or "unknown"
+                    )
+
             # occurred_at comes back as UTC from the api -- show it in
             # whatever timezone this PC is set to, not raw UTC.
             occurred_at = datetime.fromisoformat(event["occurred_at"])
@@ -289,7 +310,7 @@ class MainWindow(QMainWindow):
                 system_name=system_name,
                 victim_name=victim_name,
                 victim_ship=ship_name,
-                ganker_tag=", ".join(m["entity_name"] for m in event["matched_entities"]) or "unknown",
+                ganker_tag=ganker_tag,
                 value_str=format_isk(event.get("total_value")),
                 attacker_count=len(event["attackers"]),
                 location_name=location_name,
@@ -335,5 +356,22 @@ class MainWindow(QMainWindow):
             system_name = self.esi.system_name(latest["solar_system_id"])
         except Exception:
             system_name = str(latest["solar_system_id"])
-        tag = ", ".join(m["entity_name"] for m in latest["matched_entities"]) or "unknown"
+
+        if latest["matched_entities"]:
+            tag = ", ".join(m["entity_name"] for m in latest["matched_entities"])
+        else:
+            tag = "unknown"
+            final_blow = next((a for a in latest["attackers"] if a.get("final_blow")), None)
+            if final_blow:
+                fallback_ids = [i for i in (final_blow.get("alliance_id"), final_blow.get("corporation_id")) if i]
+                try:
+                    names = self.esi.resolve_names(fallback_ids)
+                except Exception:
+                    names = {}
+                tag = (
+                    names.get(final_blow.get("alliance_id"))
+                    or names.get(final_blow.get("corporation_id"))
+                    or "unknown"
+                )
+
         self.last_seen_lbl.setText(f"{system_name} · {tag}")

@@ -21,14 +21,21 @@ someone else picked, and `api` itself is entirely region-agnostic.
   retention), a stuck-sequence detector jumps forward to the live edge
   after ~10 minutes rather than hanging forever waiting for a file that's
   gone.
-- **Classification**: attacker corp/alliance IDs are matched against a
-  maintained ganker list (`packages/shared/ganker_list.seed.json`, seeded
-  with CODE., Snuffed Out, and Safety. -- verify/extend this yourself). We
-  match on *attackers*, not the victim -- a ganker corp getting CONCORD'd
-  shows up as a separate killmail where that corp is the victim, which is
-  evidence CONCORD responded, not the gank itself. Classification happens
-  before the ESI region lookup (cheap, in-memory match first), so the
-  ingester only pays for a region resolution on kills that actually matter.
+- **Classification**: highsec-only, hard filter -- ganking is inherently a
+  highsec/CONCORD phenomenon, so a listed group doing normal PvP in
+  null/lowsec never counts (checked via `zkb.labels`' `loc:highsec`, free,
+  no ESI call). Within highsec, two independent ways to count as a gank:
+  attacker corp/alliance IDs matched against a maintained list
+  (`packages/shared/ganker_list.seed.json`, seeded with CODE., Snuffed
+  Out, and Safety. -- verify/extend this yourself), *or* zKillboard's own
+  `ganked` label agreeing (catches one-off/unlisted gankers too -- the
+  bot/client then fall back to showing the actual attacker corp/alliance
+  from the killmail instead of a bare "unknown"). We match on *attackers*,
+  not the victim -- a ganker corp getting CONCORD'd shows up as a separate
+  killmail where that corp is the victim, which is evidence CONCORD
+  responded, not the gank itself. Classification happens before the ESI
+  region lookup (cheap, in-memory/label match first), so the ingester
+  only pays for a region resolution on kills that actually matter.
 - **Alerts are reminders, not one-shot notices**: a kill is posted again
   each time it ages into a new tier -- 🔴 FRESH (<1h), 🟠 RECENT (<2h),
   🟡 STAY WARY (<4h) -- so people still in the area get nudged as the

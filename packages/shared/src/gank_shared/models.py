@@ -42,6 +42,10 @@ class GankEvent(BaseModel):
     """zkb.locationID -- a station/structure/celestial (belt, gate, moon,
     planet) ID pinpointing where in the system this happened. Resolve via
     ESIClient.resolve_location_name()."""
+    labels: list[str] = []
+    """zkb.labels -- includes e.g. 'loc:highsec' and, when zKillboard's own
+    heuristic agrees, 'ganked'. Used at ingestion to filter to highsec and
+    to catch ganks from groups not on our curated list."""
 
     victim: Participant
     attackers: list[Participant]

@@ -46,7 +46,7 @@ def test_collect_ids_includes_victim_and_final_blow_attacker_only():
     assert 30002187 in ids  # system
     assert 649 in ids  # ship type
     assert 10 in ids and 20 in ids  # victim char + corp
-    assert 30 in ids and 40 in ids  # final-blow attacker char + corp
+    assert 30 in ids and 40 in ids and 50 in ids  # final-blow attacker char + corp + alliance
 
 
 def test_collect_ids_ignores_non_final_blow_attackers():
@@ -111,3 +111,39 @@ def test_build_embed_omits_location_field_when_not_given():
 
     field_names = {f.name for f in embed.fields}
     assert "Location" not in field_names
+
+
+def test_build_embed_falls_back_to_attacker_alliance_when_unlisted():
+    """A kill zKillboard flagged as a gank but that isn't from a group on
+    our curated list -- matched_entities is empty, but we still know who
+    did it from the killmail itself, so show that instead of "unknown"."""
+    event = _event(minutes_ago=5)
+    event["matched_entities"] = []
+    names = {50: "Some Unlisted Alliance", 40: "Some Unlisted Corp"}
+
+    embed = build_embed(event, names)
+
+    field_values = {f.name: f.value for f in embed.fields}
+    assert field_values["Ganker group"] == "Some Unlisted Alliance"
+
+
+def test_build_embed_falls_back_to_attacker_corp_when_no_alliance():
+    event = _event(minutes_ago=5)
+    event["matched_entities"] = []
+    event["attackers"][0]["alliance_id"] = None
+    names = {40: "Some Unlisted Corp"}
+
+    embed = build_embed(event, names)
+
+    field_values = {f.name: f.value for f in embed.fields}
+    assert field_values["Ganker group"] == "Some Unlisted Corp"
+
+
+def test_build_embed_ganker_group_unknown_when_nothing_resolves():
+    event = _event(minutes_ago=5)
+    event["matched_entities"] = []
+
+    embed = build_embed(event, names={})
+
+    field_values = {f.name: f.value for f in embed.fields}
+    assert field_values["Ganker group"] == "unknown"

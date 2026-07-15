@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from gank_shared.models import EntityType, GankEvent, Participant
+from gank_shared.ganker_list import classify
+from gank_shared.models import EntityType, GankEvent, GankerListEntry, Participant
 
 
 def attacker_entity_keys(event: GankEvent) -> set[tuple[EntityType, int]]:
@@ -16,6 +17,30 @@ def attacker_entity_keys(event: GankEvent) -> set[tuple[EntityType, int]]:
         for etype, eid in [(EntityType.CORPORATION, a.corporation_id), (EntityType.ALLIANCE, a.alliance_id)]
         if eid is not None
     }
+
+
+def classify_gank(event: GankEvent, ganker_list: list[GankerListEntry]) -> list[GankerListEntry] | None:
+    """Decides whether `event` counts as a gank at all, and if so, which
+    curated-list entries (if any) it matches.
+
+    Ganking is inherently a highsec/CONCORD phenomenon -- the same group
+    doing normal PvP in null/lowsec isn't a gank, so highsec is a hard
+    requirement, not a per-consumer preference. Within highsec, a kill
+    counts if it's from a group on our curated list (always attributed by
+    name) OR if zKillboard's own "ganked" heuristic flags it (catches
+    everyone else too; matched_entities comes back empty for those, and
+    callers should fall back to the killmail's own attacker corp/alliance
+    for display rather than a bare "unknown").
+
+    Returns None if this isn't a gank at all.
+    """
+    if "loc:highsec" not in event.labels:
+        return None
+
+    matches = classify(attacker_entity_keys(event), ganker_list)
+    if matches or "ganked" in event.labels:
+        return matches
+    return None
 
 
 def parse_package(package: dict) -> GankEvent:
@@ -55,6 +80,7 @@ def parse_package(package: dict) -> GankEvent:
         solar_system_id=esi["solar_system_id"],
         region_id=None,
         location_id=zkb.get("locationID"),
+        labels=zkb.get("labels", []),
         victim=victim,
         attackers=attackers,
         total_value=zkb.get("totalValue"),

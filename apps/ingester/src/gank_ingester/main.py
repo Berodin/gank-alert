@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 
 from gank_shared.esi import ESIClient
-from gank_shared.ganker_list import classify, load_ganker_list
+from gank_shared.ganker_list import load_ganker_list
 
 from gank_ingester import storage
-from gank_ingester.parse import attacker_entity_keys, parse_package
+from gank_ingester.parse import classify_gank, parse_package
 from gank_ingester.r2z2 import R2Z2Client
 
 logger = logging.getLogger("gank_ingester")
@@ -50,25 +50,21 @@ def run() -> None:
         for package in r2z2.iter_from(start):
             event = parse_package(package)
 
-            # Classify first (cheap, in-memory) -- only pay for the ESI
-            # region lookup on kills that actually matter. Region isn't a
-            # discovery filter anymore: the ingester watches the whole
-            # galaxy for the ganker list, and each Discord guild picks
-            # which region's matches it wants alerts for.
-            matches = classify(attacker_entity_keys(event), ganker_list)
-            if matches:
+            matches = classify_gank(event, ganker_list)
+            if matches is not None:
                 event.region_id = esi.region_id_for_system(event.solar_system_id)
                 event.is_gank = True
                 event.matched_entities = matches
                 storage.save_gank_event(conn, event)
                 matched += 1
                 logger.info(
-                    "GANK killmail_id=%d system=%d region=%d victim_ship=%s by %s",
+                    "GANK killmail_id=%d system=%d region=%d victim_ship=%s by %s%s",
                     event.killmail_id,
                     event.solar_system_id,
                     event.region_id,
                     event.victim.ship_type_id,
-                    ", ".join(m.entity_name for m in matches),
+                    ", ".join(m.entity_name for m in matches) or "unlisted group",
+                    "" if matches else " (via zKillboard's ganked label)",
                 )
 
             processed += 1

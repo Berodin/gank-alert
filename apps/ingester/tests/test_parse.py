@@ -1,6 +1,8 @@
-from gank_shared.models import EntityType
+import copy
 
-from gank_ingester.parse import attacker_entity_keys, parse_package
+from gank_shared.models import EntityType, GankerListEntry
+
+from gank_ingester.parse import attacker_entity_keys, classify_gank, parse_package
 
 # Shape verified live against https://r2z2.zkillboard.com/ephemeral/<n>.json
 SAMPLE_PACKAGE = {
@@ -56,6 +58,7 @@ def test_parse_package_maps_core_fields():
     assert event.sequence_id == 98531146
     assert event.total_value == 10000
     assert event.location_id == 40114185
+    assert event.labels == ["tz:usw", "pvp", "loc:nullsec"]
     assert event.region_id is None  # filled in later by the caller
     assert event.is_gank is False
 
@@ -104,6 +107,45 @@ def test_attacker_entity_keys_excludes_victim():
     # separate killmail, not evidence this one is a gank.
     assert (EntityType.ALLIANCE, 99011990) not in keys
     assert (EntityType.CORPORATION, 98746772) not in keys
+
+
+LISTED_GANKER = GankerListEntry(entity_type=EntityType.ALLIANCE, entity_id=99003581, entity_name="Test Ganker Alliance")
+
+
+def _package_with_labels(labels: list[str]) -> dict:
+    package = copy.deepcopy(SAMPLE_PACKAGE)
+    package["zkb"]["labels"] = labels
+    return package
+
+
+def test_classify_gank_matches_curated_list_in_highsec():
+    event = parse_package(_package_with_labels(["loc:highsec"]))
+    assert classify_gank(event, [LISTED_GANKER]) == [LISTED_GANKER]
+
+
+def test_classify_gank_curated_list_match_ignored_outside_highsec():
+    """Ganking is a highsec/CONCORD phenomenon -- the same alliance doing
+    normal PvP in null isn't a gank just because they're on our list."""
+    event = parse_package(_package_with_labels(["loc:nullsec"]))
+    assert classify_gank(event, [LISTED_GANKER]) is None
+
+
+def test_classify_gank_zkb_label_matches_even_without_curated_list():
+    event = parse_package(_package_with_labels(["loc:highsec", "ganked"]))
+    # a gank, but not from a group we track by name -- empty, not None
+    assert classify_gank(event, []) == []
+
+
+def test_classify_gank_zkb_label_ignored_outside_highsec():
+    event = parse_package(_package_with_labels(["loc:nullsec", "ganked"]))
+    assert classify_gank(event, []) is None
+
+
+def test_classify_gank_highsec_alone_is_not_enough():
+    """Being in highsec doesn't make every kill a gank -- still needs
+    either a curated-list match or zKillboard's own label."""
+    event = parse_package(_package_with_labels(["loc:highsec"]))
+    assert classify_gank(event, []) is None
 
 
 def test_attacker_entity_keys_skips_none_ids():

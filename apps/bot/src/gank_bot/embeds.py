@@ -15,7 +15,7 @@ def collect_ids(event: dict) -> set[int]:
             ids.add(event["victim"][key])
     for attacker in event["attackers"]:
         if attacker.get("final_blow"):
-            for key in ("character_id", "corporation_id"):
+            for key in ("character_id", "corporation_id", "alliance_id"):
                 if attacker.get(key):
                     ids.add(attacker[key])
     return ids
@@ -45,7 +45,19 @@ def build_embed(event: dict, names: dict[int, str], location_name: str | None = 
     else:
         final_blow_str = "unknown"
 
-    ganker_tags = ", ".join(m["entity_name"] for m in event["matched_entities"]) or "unknown"
+    if event["matched_entities"]:
+        ganker_tags = ", ".join(m["entity_name"] for m in event["matched_entities"])
+    elif final_blow:
+        # Not on our curated list, but zKillboard's own heuristic flagged
+        # this as a gank -- we still know exactly who did it from the
+        # killmail itself, so show that instead of a bare "unknown".
+        ganker_tags = (
+            names.get(final_blow.get("alliance_id"))
+            or names.get(final_blow.get("corporation_id"))
+            or "unknown"
+        )
+    else:
+        ganker_tags = "unknown"
 
     embed = discord.Embed(
         title=f"[{label}] {ship_name} destroyed in {system_name}",
