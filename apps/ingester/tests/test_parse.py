@@ -118,15 +118,22 @@ def _package_with_labels(labels: list[str]) -> dict:
     return package
 
 
-def test_classify_gank_matches_curated_list_in_highsec():
+def test_classify_gank_requires_zkb_ganked_label_even_for_curated_list():
+    """A curated-list group doing normal highsec PvP (mission running, a
+    duel, a wardec kill, whatever) is not a gank just because they're on
+    the list -- zKillboard's own "ganked" label is the sole authority on
+    whether this is a gank at all. The list only affects attribution."""
     event = parse_package(_package_with_labels(["loc:highsec"]))
+    assert classify_gank(event, [LISTED_GANKER]) is None
+
+
+def test_classify_gank_matches_curated_list_when_zkb_agrees():
+    event = parse_package(_package_with_labels(["loc:highsec", "ganked"]))
     assert classify_gank(event, [LISTED_GANKER]) == [LISTED_GANKER]
 
 
-def test_classify_gank_curated_list_match_ignored_outside_highsec():
-    """Ganking is a highsec/CONCORD phenomenon -- the same alliance doing
-    normal PvP in null isn't a gank just because they're on our list."""
-    event = parse_package(_package_with_labels(["loc:nullsec"]))
+def test_classify_gank_ignored_outside_highsec_even_with_zkb_label():
+    event = parse_package(_package_with_labels(["loc:nullsec", "ganked"]))
     assert classify_gank(event, [LISTED_GANKER]) is None
 
 
@@ -136,14 +143,7 @@ def test_classify_gank_zkb_label_matches_even_without_curated_list():
     assert classify_gank(event, []) == []
 
 
-def test_classify_gank_zkb_label_ignored_outside_highsec():
-    event = parse_package(_package_with_labels(["loc:nullsec", "ganked"]))
-    assert classify_gank(event, []) is None
-
-
 def test_classify_gank_highsec_alone_is_not_enough():
-    """Being in highsec doesn't make every kill a gank -- still needs
-    either a curated-list match or zKillboard's own label."""
     event = parse_package(_package_with_labels(["loc:highsec"]))
     assert classify_gank(event, []) is None
 

@@ -23,24 +23,23 @@ def classify_gank(event: GankEvent, ganker_list: list[GankerListEntry]) -> list[
     """Decides whether `event` counts as a gank at all, and if so, which
     curated-list entries (if any) it matches.
 
-    Ganking is inherently a highsec/CONCORD phenomenon -- the same group
-    doing normal PvP in null/lowsec isn't a gank, so highsec is a hard
-    requirement, not a per-consumer preference. Within highsec, a kill
-    counts if it's from a group on our curated list (always attributed by
-    name) OR if zKillboard's own "ganked" heuristic flags it (catches
-    everyone else too; matched_entities comes back empty for those, and
-    callers should fall back to the killmail's own attacker corp/alliance
-    for display rather than a bare "unknown").
+    zKillboard's own "ganked" label (plus highsec, which it implies but we
+    check explicitly anyway) is the *sole* authority on whether this is a
+    gank -- a curated-list group doing perfectly normal highsec PvP
+    (mission running, a duel, a wardec kill, whatever) is not a gank just
+    because they're on the list. The list is only used for attribution:
+    when zKillboard says "ganked" AND the attacker is a group we track,
+    matched_entities names them; when it says "ganked" but the attacker
+    isn't tracked, matched_entities comes back empty and callers should
+    fall back to the killmail's own attacker corp/alliance instead of a
+    bare "unknown".
 
     Returns None if this isn't a gank at all.
     """
-    if "loc:highsec" not in event.labels:
+    if "loc:highsec" not in event.labels or "ganked" not in event.labels:
         return None
 
-    matches = classify(attacker_entity_keys(event), ganker_list)
-    if matches or "ganked" in event.labels:
-        return matches
-    return None
+    return classify(attacker_entity_keys(event), ganker_list)
 
 
 def parse_package(package: dict) -> GankEvent:
