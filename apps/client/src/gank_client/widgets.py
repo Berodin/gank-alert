@@ -169,7 +169,12 @@ class GankFeedRow(QWidget):
             dismiss_btn = QPushButton("×")
             dismiss_btn.setFixedSize(20, 20)
             dismiss_btn.setStyleSheet(
-                f"QPushButton {{ color: {theme.TEXT_DIM}; border: none; font-size: 14px; }}"
+                # The app-wide QPushButton rule has heavy padding meant for
+                # normal buttons -- without overriding it here too, it
+                # pushes the glyph outside this tiny fixed-size box and it
+                # renders as nothing.
+                f"QPushButton {{ background-color: transparent; border: none; padding: 0px; "
+                f"color: {theme.TEXT_DIM}; font-family: '{theme.FONT_MONO}'; font-size: 16px; }}"
                 f"QPushButton:hover {{ color: {theme.ACCENT_RED}; }}"
             )
             dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
