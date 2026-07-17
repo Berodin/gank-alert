@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 from gank_shared.esi import ESIClient
@@ -10,11 +11,20 @@ from gank_shared.models import GankEvent, GankerListEntry
 from gank_shared.zkillboard import fetch_current_labels
 
 from gank_ingester import storage
-from gank_ingester.parse import classify_gank, parse_package
+from gank_ingester.parse import classify_gank, needs_gank_recheck, parse_package
 from gank_ingester.r2z2 import R2Z2Client
 from gank_ingester.recheck import RecheckQueue
 
 logger = logging.getLogger("gank_ingester")
+
+RECHECK_CALL_INTERVAL_SECONDS = 1.0
+"""Minimum gap between successive zKillboard REST calls when processing a
+batch of due rechecks. Without this, a burst of kills that all became due
+around the same time (observed in production: up to 13 at once) fires
+that many REST calls back to back with zero pacing -- confirmed some of
+those get silently dropped (fetch_current_labels returns [] on any
+non-200, indistinguishable from "genuinely not a gank"), almost certainly
+zKillboard rate-limiting the burst."""
 
 
 def _save_gank(
@@ -77,14 +87,12 @@ def run() -> None:
             if matches is not None:
                 _save_gank(conn, esi, event, matches, via_recheck=False)
                 matched += 1
-            elif "loc:highsec" in event.labels and "ganked" not in event.labels:
-                # zKillboard sometimes adds "ganked" after our first read
-                # (looks like it needs to correlate this kill with CONCORD
-                # killing the attacker, which can take a few minutes) --
-                # give it one delayed recheck rather than missing it for good.
+            elif needs_gank_recheck(event):
                 recheck_queue.add(event)
 
-            for pending in recheck_queue.pop_due():
+            for i, pending in enumerate(recheck_queue.pop_due()):
+                if i > 0:
+                    time.sleep(RECHECK_CALL_INTERVAL_SECONDS)
                 pending.labels = fetch_current_labels(pending.killmail_id)
                 recheck_matches = classify_gank(pending, ganker_list)
                 if recheck_matches is not None:

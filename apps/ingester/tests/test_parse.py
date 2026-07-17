@@ -2,7 +2,7 @@ import copy
 
 from gank_shared.models import EntityType, GankerListEntry
 
-from gank_ingester.parse import attacker_entity_keys, classify_gank, parse_package
+from gank_ingester.parse import attacker_entity_keys, classify_gank, needs_gank_recheck, parse_package
 
 # Shape verified live against https://r2z2.zkillboard.com/ephemeral/<n>.json
 SAMPLE_PACKAGE = {
@@ -146,6 +146,28 @@ def test_classify_gank_zkb_label_matches_even_without_curated_list():
 def test_classify_gank_highsec_alone_is_not_enough():
     event = parse_package(_package_with_labels(["loc:highsec"]))
     assert classify_gank(event, []) is None
+
+
+def test_needs_recheck_for_highsec_kill_without_ganked_yet():
+    event = parse_package(_package_with_labels(["loc:highsec", "pvp"]))
+    assert needs_gank_recheck(event) is True
+
+
+def test_no_recheck_needed_when_already_ganked():
+    event = parse_package(_package_with_labels(["loc:highsec", "ganked"]))
+    assert needs_gank_recheck(event) is False
+
+
+def test_no_recheck_outside_highsec():
+    event = parse_package(_package_with_labels(["loc:nullsec"]))
+    assert needs_gank_recheck(event) is False
+
+
+def test_no_recheck_for_npc_kills():
+    """NPC kills (rats, sleepers, etc) are never a gank -- don't burn a
+    recheck call finding that out."""
+    event = parse_package(_package_with_labels(["loc:highsec", "npc", "pvp"]))
+    assert needs_gank_recheck(event) is False
 
 
 def test_attacker_entity_keys_skips_none_ids():

@@ -42,6 +42,18 @@ def classify_gank(event: GankEvent, ganker_list: list[GankerListEntry]) -> list[
     return classify(attacker_entity_keys(event), ganker_list)
 
 
+def needs_gank_recheck(event: GankEvent) -> bool:
+    """True if `event` is a highsec kill without "ganked" yet but could
+    plausibly get it later (zKillboard adds it asynchronously) -- worth
+    queuing for a delayed recheck. NPC kills are excluded: never a gank,
+    no point burning a recheck call on one."""
+    return (
+        "loc:highsec" in event.labels
+        and "ganked" not in event.labels
+        and "npc" not in event.labels
+    )
+
+
 def parse_package(package: dict) -> GankEvent:
     """Map a raw R2Z2 package ({killmail_id, hash, esi, zkb, sequence_id, ...})
     into our GankEvent. region_id and is_gank/matched_entities are filled in
