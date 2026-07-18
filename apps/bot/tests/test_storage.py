@@ -29,6 +29,48 @@ def test_set_guild_region_then_read_back(tmp_path: Path):
     assert rows[0]["region_name"] == "The Forge"
 
 
+def test_set_guild_region_defaults_reminder_mode_to_fresh_recent(tmp_path: Path):
+    conn = storage.connect(tmp_path / "db.sqlite3")
+    storage.set_guild_region(conn, guild_id=1, channel_id=2, region_id=10000002, region_name="The Forge")
+
+    rows = storage.all_guild_settings(conn)
+    assert rows[0]["reminder_mode"] == "fresh_recent"
+
+
+def test_set_guild_reminder_mode_updates_existing_row(tmp_path: Path):
+    conn = storage.connect(tmp_path / "db.sqlite3")
+    storage.set_guild_region(conn, guild_id=1, channel_id=2, region_id=10000002, region_name="The Forge")
+
+    updated = storage.set_guild_reminder_mode(conn, guild_id=1, reminder_mode="fresh_only")
+
+    assert updated is True
+    rows = storage.all_guild_settings(conn)
+    assert rows[0]["reminder_mode"] == "fresh_only"
+
+
+def test_set_guild_reminder_mode_without_a_region_set_first_returns_false(tmp_path: Path):
+    """No guild_settings row exists yet -- /setreminders before /setregion
+    has nothing to update."""
+    conn = storage.connect(tmp_path / "db.sqlite3")
+
+    updated = storage.set_guild_reminder_mode(conn, guild_id=1, reminder_mode="fresh_only")
+
+    assert updated is False
+
+
+def test_set_guild_region_upsert_preserves_reminder_mode(tmp_path: Path):
+    """Re-running /setregion (e.g. to change region) must not silently
+    reset a reminder mode the guild already configured."""
+    conn = storage.connect(tmp_path / "db.sqlite3")
+    storage.set_guild_region(conn, guild_id=1, channel_id=2, region_id=10000002, region_name="The Forge")
+    storage.set_guild_reminder_mode(conn, guild_id=1, reminder_mode="fresh_only")
+
+    storage.set_guild_region(conn, guild_id=1, channel_id=2, region_id=10000043, region_name="Domain")
+
+    rows = storage.all_guild_settings(conn)
+    assert rows[0]["reminder_mode"] == "fresh_only"
+
+
 def test_set_guild_region_upserts_on_same_guild(tmp_path: Path):
     conn = storage.connect(tmp_path / "db.sqlite3")
     storage.set_guild_region(conn, guild_id=1, channel_id=2, region_id=10000002, region_name="The Forge")

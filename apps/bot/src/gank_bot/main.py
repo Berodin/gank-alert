@@ -11,7 +11,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from gank_shared.esi import ESIClient
-from gank_shared.tiers import WARY_MINUTES, tier_for_age
+from gank_shared.tiers import RECENT_MINUTES, tier_for_age
 
 from gank_bot import storage
 from gank_bot.embeds import build_embed, collect_ids
@@ -19,6 +19,20 @@ from gank_bot.embeds import build_embed, collect_ids
 logger = logging.getLogger("gank_bot")
 
 POLL_SECONDS = 30
+
+REMINDER_MODE_TIERS: dict[str, frozenset[str]] = {
+    "fresh_only": frozenset({"FRESH"}),
+    "fresh_recent": frozenset({"FRESH", "RECENT"}),
+}
+"""Which staleness tiers actually generate a reminder post, per guild
+setting -- STAY WARY reminders are retired entirely, in both modes: past
+RECENT_MINUTES a kill still ages out visually in the client (color fade),
+it just no longer gets a repeated Discord message."""
+DEFAULT_REMINDER_MODE = "fresh_recent"
+
+
+def _tier_allowed(reminder_mode: str, label: str) -> bool:
+    return label in REMINDER_MODE_TIERS.get(reminder_mode, REMINDER_MODE_TIERS[DEFAULT_REMINDER_MODE])
 
 
 class GankBot(discord.Client):
@@ -42,7 +56,11 @@ class GankBot(discord.Client):
         conn = storage.connect(self.db_path)
         try:
             guilds = storage.all_guild_settings(conn)
-            since_iso = (datetime.now(UTC) - timedelta(minutes=WARY_MINUTES)).isoformat()
+            # RECENT_MINUTES, not WARY_MINUTES: no reminder mode ever posts
+            # a STAY WARY reminder (see REMINDER_MODE_TIERS), so there's no
+            # point fetching events older than the latest tier any mode
+            # can actually post.
+            since_iso = (datetime.now(UTC) - timedelta(minutes=RECENT_MINUTES)).isoformat()
 
             for guild_row in guilds:
                 # One guild's bad channel permissions (etc) must not take
@@ -71,11 +89,13 @@ class GankBot(discord.Client):
             return
 
         already_posted = storage.posted_tiers_for_guild(conn, guild_id=guild_row["guild_id"])
+        reminder_mode = guild_row["reminder_mode"]
 
         # A kill is a repeating reminder, not a one-shot notice: it's
         # posted again each time it crosses into a new staleness tier
-        # (FRESH -> RECENT -> STAY WARY), so people still in the area
-        # get nudged as the threat window closes, not just once at t=0.
+        # (FRESH -> RECENT), so people still in the area get nudged as
+        # the threat window closes, not just once at t=0. Which tiers
+        # actually post is configurable per guild via /setreminders.
         due = []
         for killmail_id, payload in rows:
             event = json.loads(payload)
@@ -85,6 +105,8 @@ class GankBot(discord.Client):
             if tier is None:
                 continue
             label, _ = tier
+            if not _tier_allowed(reminder_mode, label):
+                continue
             if (killmail_id, label) in already_posted:
                 continue
             due.append((killmail_id, label, event))
@@ -158,6 +180,44 @@ def _register_commands(tree: app_commands.CommandTree, db_path: Path, esi: ESICl
             )
         else:
             logger.exception("setregion command failed", exc_info=error)
+            await interaction.response.send_message("Something went wrong.", ephemeral=True)
+
+    @tree.command(
+        name="setreminders", description="Choose how many times this channel gets reminded about an ongoing gank"
+    )
+    @app_commands.describe(mode="How many staleness reminders to post per gank")
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Fresh only -- single alert, no reminder", value="fresh_only"),
+            app_commands.Choice(name="Fresh + Recent -- one reminder within 2h", value="fresh_recent"),
+        ]
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def setreminders(interaction: discord.Interaction, mode: app_commands.Choice[str]) -> None:
+        conn = storage.connect(db_path)
+        try:
+            updated = storage.set_guild_reminder_mode(
+                conn, guild_id=interaction.guild_id, reminder_mode=mode.value
+            )
+        finally:
+            conn.close()
+
+        if not updated:
+            await interaction.response.send_message(
+                "This channel hasn't been set up yet -- run /setregion first.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(f"Reminder mode set to **{mode.name}**.")
+
+    @setreminders.error
+    async def setreminders_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(
+                "You need the 'Manage Server' permission to change this.", ephemeral=True
+            )
+        else:
+            logger.exception("setreminders command failed", exc_info=error)
             await interaction.response.send_message("Something went wrong.", ephemeral=True)
 
 

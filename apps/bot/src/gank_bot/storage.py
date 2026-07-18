@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     channel_id INTEGER NOT NULL,
     region_id INTEGER NOT NULL,
     region_name TEXT NOT NULL,
+    reminder_mode TEXT NOT NULL DEFAULT 'fresh_recent',
     updated_at TEXT NOT NULL
 );
 
@@ -44,7 +45,19 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """CREATE TABLE IF NOT EXISTS in SCHEMA only helps on a fresh DB --
+    existing production tables need columns added after the fact."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(guild_settings)")}
+    if "reminder_mode" not in columns:
+        conn.execute(
+            "ALTER TABLE guild_settings ADD COLUMN reminder_mode TEXT NOT NULL DEFAULT 'fresh_recent'"
+        )
+        conn.commit()
 
 
 def set_guild_region(conn: sqlite3.Connection, *, guild_id: int, channel_id: int, region_id: int, region_name: str) -> None:
@@ -63,6 +76,16 @@ def set_guild_region(conn: sqlite3.Connection, *, guild_id: int, channel_id: int
 def all_guild_settings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
     return conn.execute("SELECT * FROM guild_settings").fetchall()
+
+
+def set_guild_reminder_mode(conn: sqlite3.Connection, *, guild_id: int, reminder_mode: str) -> bool:
+    """Returns False if this guild has no settings row yet (region not set
+    via /setregion), since guild_settings has no row to update in that case."""
+    cur = conn.execute(
+        "UPDATE guild_settings SET reminder_mode = ? WHERE guild_id = ?", (reminder_mode, guild_id)
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def events_in_window_for_guild(conn: sqlite3.Connection, *, guild_id: int, region_id: int, since_iso: str) -> list[tuple[int, str]]:
