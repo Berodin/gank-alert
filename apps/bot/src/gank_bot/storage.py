@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS guild_settings (
 -- One row per (guild, killmail, tier) -- a kill is deliberately re-posted
 -- as a reminder each time it crosses into a new staleness tier, not just
 -- once. Which tiers actually trigger a reminder is per-guild (see
--- gank_bot.main.REMINDER_MODE_TIERS) -- STAY WARY never does, regardless
+-- gank_bot.main.REMINDER_MODE_MAX_POSTS) -- STAY WARY never does, regardless
 -- of mode. The tier is part of the key so each reminder fires exactly once.
 CREATE TABLE IF NOT EXISTS discord_posts (
     guild_id INTEGER NOT NULL,

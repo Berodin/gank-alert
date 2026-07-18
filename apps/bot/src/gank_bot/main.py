@@ -20,19 +20,29 @@ logger = logging.getLogger("gank_bot")
 
 POLL_SECONDS = 30
 
-REMINDER_MODE_TIERS: dict[str, frozenset[str]] = {
-    "fresh_only": frozenset({"FRESH"}),
-    "fresh_recent": frozenset({"FRESH", "RECENT"}),
+REMINDER_MODE_MAX_POSTS: dict[str, int] = {
+    "fresh_only": 1,
+    "fresh_recent": 2,
 }
-"""Which staleness tiers actually generate a reminder post, per guild
-setting -- STAY WARY reminders are retired entirely, in both modes: past
-RECENT_MINUTES a kill still ages out visually in the client (color fade),
-it just no longer gets a repeated Discord message."""
+"""Max number of times a single kill gets posted to a guild, per its
+reminder mode -- STAY WARY reminders are retired entirely in both modes:
+past RECENT_MINUTES a kill still ages out visually in the client (color
+fade), it just no longer gets a repeated Discord message.
+
+Deliberately keyed on *how many times this kill has posted*, not on
+"only post while literally in the FRESH tier" -- zKillboard's own
+"ganked" labeling is retroactive and can take much longer than usual
+(confirmed in production: one solo gank took 67 minutes, past the
+60-minute FRESH cutoff, before we ever saw it as a gank at all). A kill
+whose first-ever sighting already lands in RECENT must still get its one
+guaranteed post under fresh_only -- the alternative is total silence for
+a real gank, which defeats the point of the mode."""
 DEFAULT_REMINDER_MODE = "fresh_recent"
 
 
-def _tier_allowed(reminder_mode: str, label: str) -> bool:
-    return label in REMINDER_MODE_TIERS.get(reminder_mode, REMINDER_MODE_TIERS[DEFAULT_REMINDER_MODE])
+def _reminder_allowed(reminder_mode: str, already_posted_count: int) -> bool:
+    max_posts = REMINDER_MODE_MAX_POSTS.get(reminder_mode, REMINDER_MODE_MAX_POSTS[DEFAULT_REMINDER_MODE])
+    return already_posted_count < max_posts
 
 
 class GankBot(discord.Client):
@@ -89,13 +99,20 @@ class GankBot(discord.Client):
             return
 
         already_posted = storage.posted_tiers_for_guild(conn, guild_id=guild_row["guild_id"])
+        posted_counts: dict[int, int] = {}
+        for kid, _tier in already_posted:
+            posted_counts[kid] = posted_counts.get(kid, 0) + 1
         reminder_mode = guild_row["reminder_mode"]
 
         # A kill is a repeating reminder, not a one-shot notice: it's
         # posted again each time it crosses into a new staleness tier
         # (FRESH -> RECENT), so people still in the area get nudged as
-        # the threat window closes, not just once at t=0. Which tiers
-        # actually post is configurable per guild via /setreminders.
+        # the threat window closes, not just once at t=0. How many times
+        # is capped per guild via /setreminders (REMINDER_MODE_MAX_POSTS)
+        # -- capped by count, not by which literal tier this is, since a
+        # kill's first-ever sighting can itself already land past FRESH
+        # (zKillboard's "ganked" labeling is retroactive and sometimes
+        # slow) and must still get its one guaranteed post.
         due = []
         for killmail_id, payload in rows:
             event = json.loads(payload)
@@ -105,9 +122,9 @@ class GankBot(discord.Client):
             if tier is None:
                 continue
             label, _ = tier
-            if not _tier_allowed(reminder_mode, label):
-                continue
             if (killmail_id, label) in already_posted:
+                continue
+            if not _reminder_allowed(reminder_mode, posted_counts.get(killmail_id, 0)):
                 continue
             due.append((killmail_id, label, event))
 
