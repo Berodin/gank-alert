@@ -137,8 +137,12 @@ def test_posted_tiers_is_per_guild_not_global(tmp_path: Path):
 
 
 def _tier_dedup(conn, *, guild_id: int, killmail_id: int, age_minutes: float) -> str | None:
-    """Mirrors the dedup check in gank_bot.main._post_for_guild: given a
-    kill's current age, is there a not-yet-posted tier for it?"""
+    """Mirrors the tier-crossing half of gank_bot.main._post_for_guild's
+    dedup check: given a kill's current age, is there a not-yet-posted
+    tier for it? Deliberately doesn't reproduce the reminder-mode filter
+    (_tier_allowed) layered on top in the real code -- that's tested on
+    its own in test_main.py. This only exercises whether STAY WARY, if it
+    were ever allowed, would still correctly dedup across tier crossings."""
     tier = tier_for_age(age_minutes)
     if tier is None:
         return None
