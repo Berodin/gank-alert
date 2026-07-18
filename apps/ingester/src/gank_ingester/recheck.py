@@ -4,18 +4,26 @@ import time
 
 from gank_shared.models import GankEvent
 
-RECHECK_INTERVALS_SECONDS = [180, 300]
-"""Retry schedule for re-checking a highsec kill that didn't have
-zKillboard's "ganked" label on first read: first check 180s after it's
-queued, and if still nothing, one more check 300s after that (~8 minutes
-total) before giving up. zKillboard appears to add the label
-asynchronously -- likely correlating the victim's kill with CONCORD
-killing the attacker(s), which itself takes anywhere from seconds to
-several minutes. A single 180s check was not resilient enough: confirmed
-in production on large multi-attacker (10+) fleet ganks, where presumably
-correlating that many attacker deaths against CONCORD takes longer than
-simpler ganks -- those still had no "ganked" label at the 180s mark but
-did within the following few minutes."""
+RECHECK_INTERVALS_SECONDS = [600, 960]
+"""Fallback retry schedule for re-checking a highsec kill that didn't have
+zKillboard's "ganked" label on first read.
+
+This is a safety net, not the primary mechanism -- the primary path is
+main.py reacting to the R2Z2 `sequence_updated` pointer (see
+zKillboard's own wiki, "API (R2Z2)"), which fires precisely when
+zKillboard retroactively relabels a kill. This REST-polling fallback
+exists only in case that signal is missed (e.g. an ingester restart gap).
+
+The timing here is not a guess: read directly from zKillboard's own
+source (cron/9.ganked.php), "ganked" is added by a batch job that
+correlates the victim's kill with CONCORD killing the attacker(s), and
+that job self-throttles to run at most once every 900 seconds (15
+minutes) -- so a kill can legitimately need just under 900s before the
+next run even attempts it. First check at 600s catches the common case
+where a run happens to land early; the second at 960s clears the full
+900s worst case plus margin. Beyond that, only zKillboard's own daily
+full-history sweep (cron/9.ganked_full.php, ~once per 25h) would still
+catch it -- not worth polling further for."""
 
 
 class RecheckQueue:

@@ -28,15 +28,15 @@ zKillboard rate-limiting the burst."""
 
 
 def _save_gank(
-    conn, esi: ESIClient, event: GankEvent, matches: list[GankerListEntry], *, via_recheck: bool
+    conn, esi: ESIClient, event: GankEvent, matches: list[GankerListEntry], *, source: str
 ) -> None:
     event.region_id = esi.region_id_for_system(event.solar_system_id)
     event.is_gank = True
     event.matched_entities = matches
     storage.save_gank_event(conn, event)
     logger.info(
-        "GANK%s killmail_id=%d system=%d region=%d victim_ship=%s by %s%s",
-        " (recheck)" if via_recheck else "",
+        "GANK (%s) killmail_id=%d system=%d region=%d victim_ship=%s by %s%s",
+        source,
         event.killmail_id,
         event.solar_system_id,
         event.region_id,
@@ -44,6 +44,27 @@ def _save_gank(
         ", ".join(m.entity_name for m in matches) or "unlisted group",
         "" if matches else " (via zKillboard's ganked label)",
     )
+
+
+def _process_sequence_update(
+    conn, esi: ESIClient, r2z2: R2Z2Client, ganker_list: list[GankerListEntry], updated_sequence: int
+) -> bool:
+    """R2Z2 attaches `sequence_updated` to a later package when zKillboard
+    retroactively edits an earlier one -- confirmed against zKillboard's
+    own source (cron/9.ganked.php + cron/9.queueSequences.php) and its
+    wiki ("API (R2Z2)"): this is exactly how "ganked" being added after
+    the fact gets surfaced. Re-fetching that exact sequence gives us the
+    corrected labels precisely when they change, no delay-guessing
+    needed. Returns True if it turned out to be a gank."""
+    updated_package = r2z2.fetch(updated_sequence)
+    if updated_package is None:
+        return False
+    updated_event = parse_package(updated_package)
+    matches = classify_gank(updated_event, ganker_list)
+    if matches is None:
+        return False
+    _save_gank(conn, esi, updated_event, matches, source="sequence_updated")
+    return True
 
 
 def run() -> None:
@@ -85,10 +106,16 @@ def run() -> None:
 
             matches = classify_gank(event, ganker_list)
             if matches is not None:
-                _save_gank(conn, esi, event, matches, via_recheck=False)
+                _save_gank(conn, esi, event, matches, source="live")
                 matched += 1
             elif needs_gank_recheck(event):
                 recheck_queue.add(event)
+
+            updated_sequence = package.get("sequence_updated")
+            if updated_sequence and _process_sequence_update(
+                conn, esi, r2z2, ganker_list, updated_sequence
+            ):
+                matched += 1
 
             for i, (pending, attempt) in enumerate(recheck_queue.pop_due()):
                 if i > 0:
@@ -96,7 +123,7 @@ def run() -> None:
                 pending.labels = fetch_current_labels(pending.killmail_id)
                 recheck_matches = classify_gank(pending, ganker_list)
                 if recheck_matches is not None:
-                    _save_gank(conn, esi, pending, recheck_matches, via_recheck=True)
+                    _save_gank(conn, esi, pending, recheck_matches, source="recheck fallback")
                     matched += 1
                 else:
                     recheck_queue.reschedule(pending, attempt)

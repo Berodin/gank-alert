@@ -112,9 +112,10 @@ def test_attacker_entity_keys_excludes_victim():
 LISTED_GANKER = GankerListEntry(entity_type=EntityType.ALLIANCE, entity_id=99003581, entity_name="Test Ganker Alliance")
 
 
-def _package_with_labels(labels: list[str]) -> dict:
+def _package_with_labels(labels: list[str], total_value: float = 15_000_000) -> dict:
     package = copy.deepcopy(SAMPLE_PACKAGE)
     package["zkb"]["labels"] = labels
+    package["zkb"]["totalValue"] = total_value
     return package
 
 
@@ -168,6 +169,23 @@ def test_no_recheck_for_npc_kills():
     recheck call finding that out."""
     event = parse_package(_package_with_labels(["loc:highsec", "npc", "pvp"]))
     assert needs_gank_recheck(event) is False
+
+
+def test_no_recheck_below_one_million_isk():
+    """zKillboard's own ganked-labeling cron (cron/9.ganked.php) skips any
+    kill under 1,000,000 ISK unconditionally -- it can never get "ganked",
+    so there's no point queuing it for a recheck."""
+    event = parse_package(_package_with_labels(["loc:highsec", "pvp"], total_value=999_999))
+    assert needs_gank_recheck(event) is False
+
+
+def test_recheck_needed_when_total_value_unknown():
+    """Missing totalValue shouldn't block a recheck -- only a *known*
+    sub-1M value should."""
+    package = _package_with_labels(["loc:highsec", "pvp"])
+    del package["zkb"]["totalValue"]
+    event = parse_package(package)
+    assert needs_gank_recheck(event) is True
 
 
 def test_attacker_entity_keys_skips_none_ids():

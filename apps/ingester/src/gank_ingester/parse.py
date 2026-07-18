@@ -44,13 +44,18 @@ def classify_gank(event: GankEvent, ganker_list: list[GankerListEntry]) -> list[
 
 def needs_gank_recheck(event: GankEvent) -> bool:
     """True if `event` is a highsec kill without "ganked" yet but could
-    plausibly get it later (zKillboard adds it asynchronously) -- worth
-    queuing for a delayed recheck. NPC kills are excluded: never a gank,
-    no point burning a recheck call on one."""
+    plausibly get it later -- worth queuing for a delayed fallback
+    recheck (see gank_ingester.recheck). Confirmed against zKillboard's
+    own source (cron/9.ganked.php): "ganked" is added by a batch job that
+    correlates the victim's kill with CONCORD killing the attacker, and
+    it unconditionally skips any kill with zkb.totalValue below 1,000,000
+    ISK -- those can never get the label, so there's no point queuing
+    them. NPC kills are excluded for the same reason: never a gank."""
     return (
         "loc:highsec" in event.labels
         and "ganked" not in event.labels
         and "npc" not in event.labels
+        and (event.total_value is None or event.total_value >= 1_000_000)
     )
 
 

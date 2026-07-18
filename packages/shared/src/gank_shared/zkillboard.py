@@ -1,10 +1,10 @@
-"""zKillboard's REST API -- used only to re-check a single killmail's
-current zkb.labels after a delay. Discovery itself goes through R2Z2
-(see gank_ingester.r2z2); this is a narrow, low-volume supplement for the
-fact that zKillboard adds labels like "ganked" asynchronously, sometimes
-after our one-pass R2Z2 read has already moved on (it looks like it needs
-to correlate the victim's kill with CONCORD killing the attacker, which
-itself takes a few seconds to minutes to show up).
+"""zKillboard's REST API -- used only as a fallback safety net for a
+single killmail's current zkb.labels, behind gank_ingester.recheck.
+Primary detection of retroactively-added labels (e.g. "ganked") goes
+through R2Z2's `sequence_updated` pointer (see main.py), which fires
+precisely when zKillboard relabels a kill -- confirmed against
+zKillboard's own source (cron/9.ganked.php) and wiki ("API (R2Z2)"). This
+REST poll only runs for kills where that signal was somehow missed.
 
 Per https://github.com/zKillboard/zKillboard/wiki/API-(Killmails): be
 polite, send a User-Agent, don't hammer. This is called sparingly -- only
