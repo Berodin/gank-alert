@@ -90,7 +90,7 @@ def run() -> None:
             elif needs_gank_recheck(event):
                 recheck_queue.add(event)
 
-            for i, pending in enumerate(recheck_queue.pop_due()):
+            for i, (pending, attempt) in enumerate(recheck_queue.pop_due()):
                 if i > 0:
                     time.sleep(RECHECK_CALL_INTERVAL_SECONDS)
                 pending.labels = fetch_current_labels(pending.killmail_id)
@@ -98,6 +98,8 @@ def run() -> None:
                 if recheck_matches is not None:
                     _save_gank(conn, esi, pending, recheck_matches, via_recheck=True)
                     matched += 1
+                else:
+                    recheck_queue.reschedule(pending, attempt)
 
             processed += 1
             if processed % 50 == 0:

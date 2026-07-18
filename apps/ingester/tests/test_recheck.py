@@ -33,8 +33,8 @@ def _event(killmail_id: int) -> GankEvent:
     )
 
 
-def test_not_due_before_delay_elapses(fake_clock: FakeClock):
-    queue = RecheckQueue(delay_seconds=180)
+def test_not_due_before_first_interval_elapses(fake_clock: FakeClock):
+    queue = RecheckQueue(intervals=[180, 300])
     queue.add(_event(1))
 
     fake_clock.now = 179
@@ -42,20 +42,54 @@ def test_not_due_before_delay_elapses(fake_clock: FakeClock):
     assert len(queue) == 1
 
 
-def test_due_once_delay_elapses(fake_clock: FakeClock):
-    queue = RecheckQueue(delay_seconds=180)
+def test_due_at_first_interval_with_attempt_zero(fake_clock: FakeClock):
+    queue = RecheckQueue(intervals=[180, 300])
     event = _event(1)
     queue.add(event)
 
     fake_clock.now = 180
     due = queue.pop_due()
 
-    assert due == [event]
-    assert len(queue) == 0  # popped, single-shot
+    assert due == [(event, 0)]
+    assert len(queue) == 0  # popped
+
+
+def test_reschedule_queues_next_attempt(fake_clock: FakeClock):
+    queue = RecheckQueue(intervals=[180, 300])
+    event = _event(1)
+    queue.add(event)
+
+    fake_clock.now = 180
+    [(popped_event, attempt)] = queue.pop_due()
+    assert queue.reschedule(popped_event, attempt) is True
+    assert len(queue) == 1
+
+    # not due yet -- only 299s since reschedule, needs 300
+    fake_clock.now = 180 + 299
+    assert queue.pop_due() == []
+
+    fake_clock.now = 180 + 300
+    due = queue.pop_due()
+    assert due == [(event, 1)]
+
+
+def test_reschedule_returns_false_once_retries_exhausted(fake_clock: FakeClock):
+    queue = RecheckQueue(intervals=[180, 300])
+    event = _event(1)
+    queue.add(event)
+
+    fake_clock.now = 180
+    [(_, attempt)] = queue.pop_due()
+    queue.reschedule(event, attempt)  # -> attempt 1
+
+    fake_clock.now = 180 + 300
+    [(_, attempt)] = queue.pop_due()
+    assert queue.reschedule(event, attempt) is False  # no more intervals
+    assert len(queue) == 0
 
 
 def test_pop_due_only_returns_each_item_once(fake_clock: FakeClock):
-    queue = RecheckQueue(delay_seconds=180)
+    queue = RecheckQueue(intervals=[180, 300])
     queue.add(_event(1))
 
     fake_clock.now = 500
@@ -66,30 +100,14 @@ def test_pop_due_only_returns_each_item_once(fake_clock: FakeClock):
     assert second == []
 
 
-def test_multiple_items_due_at_different_times(fake_clock: FakeClock):
-    queue = RecheckQueue(delay_seconds=180)
-    queue.add(_event(1))
-    fake_clock.now = 100
-    queue.add(_event(2))
-
-    fake_clock.now = 180
-    due = queue.pop_due()
-    assert [e.killmail_id for e in due] == [1]
-
-    fake_clock.now = 280
-    due = queue.pop_due()
-    assert [e.killmail_id for e in due] == [2]
-
-
-def test_adding_same_killmail_id_again_replaces_and_resets_timer(fake_clock: FakeClock):
-    queue = RecheckQueue(delay_seconds=180)
+def test_adding_same_killmail_id_again_is_a_no_op(fake_clock: FakeClock):
+    """Don't reset an item's schedule just because the ingester happens to
+    see the same not-yet-ganked kill again before its recheck is due."""
+    queue = RecheckQueue(intervals=[180, 300])
     queue.add(_event(1))
 
     fake_clock.now = 150
-    queue.add(_event(1))  # re-added, e.g. seen again -- timer restarts
+    queue.add(_event(1))  # already queued, should be ignored
 
     fake_clock.now = 180
-    assert queue.pop_due() == []  # only 30s since the re-add
-
-    fake_clock.now = 330
-    assert len(queue.pop_due()) == 1
+    assert len(queue.pop_due()) == 1  # still due at the original 180s mark
