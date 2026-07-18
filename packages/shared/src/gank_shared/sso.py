@@ -19,7 +19,6 @@ import httpx
 
 AUTHORIZE_URL = "https://login.eveonline.com/v2/oauth/authorize"
 TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
-JWKS_ISSUER = "https://login.eveonline.com"
 
 
 @dataclass

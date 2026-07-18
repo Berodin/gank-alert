@@ -89,14 +89,6 @@ class ESIClient:
             self._system_name_cache[solar_system_id] = system["name"]
         return self._system_name_cache[solar_system_id]
 
-    def get_killmail(self, killmail_id: int, killmail_hash: str) -> dict:
-        """Fetch the authoritative killmail directly from ESI (public, no auth).
-
-        Not used by default -- R2Z2 already embeds the raw ESI killmail --
-        but kept for spot-verification.
-        """
-        return self._get(f"/killmails/{killmail_id}/{killmail_hash}/").json()
-
     def get_character_location(self, character_id: int, access_token: str) -> dict:
         """Requires the esi-location.read_location.v1 scope on access_token."""
         return self._get(f"/characters/{character_id}/location/", access_token=access_token).json()

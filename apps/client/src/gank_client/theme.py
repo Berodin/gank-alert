@@ -12,7 +12,6 @@ ASSETS = Path(__file__).parent / "assets"
 BG_VOID = "#04080b"
 BG_PANEL = "#0b141c"
 BG_PANEL_RAISED = "#10202c"
-BG_ROW_ALT = "#0e1922"
 
 BORDER = "#1d4a5c"
 BORDER_BRIGHT = "#2ee6ff"
@@ -22,7 +21,6 @@ TEXT_DIM = "#5f8998"
 TEXT_HEADER = "#7fe8ff"
 
 ACCENT_CYAN = "#22d3ee"
-ACCENT_AMBER = "#ffb020"
 ACCENT_RED = "#ff3b4e"
 ACCENT_GREEN = "#35e28a"
 
